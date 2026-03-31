@@ -207,6 +207,13 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                     "trigger_scene_media_event",
                     "start_tournament",
                     "end_tournament",
+                    "update_profile",
+                    "reset_profile",
+                    "delete_profile",
+                    "update_tournament_settings",
+                    "clear_tournament_history",
+                    "save_custom_trivia_pack",
+                    "delete_custom_trivia_pack",
                 ],
                 "reveal": {
                     "sound_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("sound_options", [])),
@@ -225,6 +232,7 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                 "trivia": {"categories": ["history","fun_facts","geography","movies","1990s","2000s","2010s","computer_games"], "age_ranges": ["6_8","9_12","13_17","18_plus"], "teams": ["Solo", "Team A", "Team B"], "buzzer_modes": [False, True], "sources": ["ai", "offline_curated"]},
                 "scene_media": dict(self.coordinator.scene_media_config),
                 "tournament": self.coordinator._tournament_state(),
+                "custom_trivia_packs": self.coordinator._custom_trivia_pack_summaries(),
             },
         })
 
@@ -378,6 +386,34 @@ class CardGameHostActionView(BaseCardGameHostView):
                 )
             elif action == "end_tournament":
                 await self.coordinator.async_end_tournament()
+            elif action == "update_profile":
+                result = await self.coordinator.async_update_profile(
+                    str(data.get("player_name", "")).strip(),
+                    dict(data.get("updates", {})),
+                )
+                return self.json({"ok": True, "state": self.coordinator.player_state(None), "result": result})
+            elif action == "reset_profile":
+                await self.coordinator.async_reset_profile(str(data.get("player_name", "")).strip())
+            elif action == "delete_profile":
+                await self.coordinator.async_delete_profile(str(data.get("player_name", "")).strip())
+            elif action == "update_tournament_settings":
+                await self.coordinator.async_update_tournament_settings(
+                    name=str(data.get("name")).strip() if data.get("name") is not None else None,
+                    target_score=int(data.get("target_score")) if data.get("target_score") is not None else None,
+                    enabled=bool(data.get("enabled")) if data.get("enabled") is not None else None,
+                )
+            elif action == "clear_tournament_history":
+                await self.coordinator.async_clear_tournament_history()
+            elif action == "save_custom_trivia_pack":
+                result = await self.coordinator.async_save_custom_trivia_pack(
+                    slug=str(data.get("slug", "")).strip(),
+                    name=str(data.get("name", "")).strip(),
+                    description=str(data.get("description", "")).strip(),
+                    questions=list(data.get("questions", [])),
+                )
+                return self.json({"ok": True, "state": self.coordinator.player_state(None), "result": result})
+            elif action == "delete_custom_trivia_pack":
+                await self.coordinator.async_delete_custom_trivia_pack(str(data.get("slug", "")).strip())
             else:
                 return self.json_error("Unknown host action", 404)
         except ValueError as err:

@@ -80,6 +80,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "started_at": None,
             "completed_at": None,
         }
+        self.custom_trivia_packs: dict[str, dict[str, Any]] = {}
 
     async def async_load(self) -> None:
         await self.deck_manager.async_load()
@@ -135,6 +136,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.player_profiles = dict(saved.get("player_profiles", {}))
             self.scene_media_config = {**self.scene_media_config, **dict(saved.get("scene_media_config", {}))}
             self.tournament = {**self.tournament, **dict(saved.get("tournament", {}))}
+            self.custom_trivia_packs = dict(saved.get("custom_trivia_packs", {}))
             self.trivia_team_mode = bool(saved.get("trivia_team_mode", False))
             self.last_trivia_results = list(saved.get("last_trivia_results", []))
             self.trivia_buzzer_mode = bool(saved.get("trivia_buzzer_mode", False))
@@ -185,6 +187,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "player_profiles": deepcopy(self.player_profiles),
             "scene_media_config": dict(self.scene_media_config),
             "tournament": deepcopy(self.tournament),
+            "custom_trivia_packs": deepcopy(self.custom_trivia_packs),
             "trivia_questions": list(self.trivia.questions),
             "trivia_source": self.trivia.source,
             "trivia_current_index": self.trivia.current_index,
@@ -424,7 +427,8 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "steal_team": self.trivia_steal_team,
             "steal_from_player": self.trivia_steal_from_player,
             "source_options": ["ai", "offline_curated"],
-            "offline_pack_categories": list(TRIVIA_CATEGORIES),
+            "offline_pack_categories": self._available_offline_trivia_categories(),
+            "custom_packs": self._custom_trivia_pack_summaries(),
         }
         state["remote_join_url"] = self.join_url
         state["remote_enabled"] = bool(self.base_url)
@@ -561,11 +565,14 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         difficulty = difficulty or TRIVIA_DIFFICULTY_BY_AGE.get(age_range, "medium")
         if self.parental_controls.get("enabled"):
             allowed_categories = set(self.parental_controls.get("allowed_trivia_categories", []))
-            if category not in allowed_categories:
+            if category not in allowed_categories and category not in self.custom_trivia_packs:
                 raise ValueError("That trivia category is blocked by parental controls")
         source = (source or "ai").strip().lower()
         if source == "offline_curated":
-            questions = get_curated_trivia_questions(category=category, age_range=age_range, difficulty=difficulty, question_count=question_count)
+            if category in self.custom_trivia_packs:
+                questions = self._get_custom_trivia_questions(category=category, age_range=age_range, difficulty=difficulty, question_count=question_count)
+            else:
+                questions = get_curated_trivia_questions(category=category, age_range=age_range, difficulty=difficulty, question_count=question_count)
         else:
             questions = await self.ai_generator.generate_trivia(category=category, age_range=age_range, difficulty=difficulty, question_count=question_count)
         moderation_issues: list[dict[str, Any]] = []
@@ -573,7 +580,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             questions, moderation_issues = moderate_trivia_questions(questions, content_mode=self.parental_controls.get("content_mode", "family_safe"))
         if not questions:
             raise ValueError("AI trivia was filtered by parental controls and no usable questions remain")
-        if self.parental_controls.get("enabled") and self.parental_controls.get("require_ai_approval"):
+        if source != "offline_curated" and self.parental_controls.get("enabled") and self.parental_controls.get("require_ai_approval"):
             self._queue_ai_item("trivia", f"{category.title()} trivia", {"questions": questions, "category": category, "age_range": age_range, "difficulty": difficulty}, f"{len(questions)} questions in {category}", moderation_issues)
             await self.async_refresh_from_engine()
             return
@@ -789,6 +796,76 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._clear_active_tournament_if_complete(force=True)
         await self.async_refresh_from_engine()
 
+    async def async_update_profile(self, player_name: str, updates: dict[str, Any]) -> dict[str, Any]:
+        profile = self._ensure_profile(player_name)
+        allowed_int_fields = {"games_played", "card_round_wins", "trivia_correct", "trivia_answered", "buzzes", "steal_wins", "tournament_wins", "total_points"}
+        for field in allowed_int_fields:
+            if field in updates and updates[field] is not None:
+                profile[field] = max(0, int(updates[field]))
+        if updates.get("last_seen") is not None:
+            profile["last_seen"] = max(0, int(updates["last_seen"]))
+        await self.async_refresh_from_engine()
+        return {"name": player_name, **profile}
+
+    async def async_reset_profile(self, player_name: str) -> None:
+        if player_name not in self.player_profiles:
+            raise ValueError("Unknown profile")
+        self.player_profiles.pop(player_name, None)
+        self._ensure_profile(player_name)
+        await self.async_refresh_from_engine()
+
+    async def async_delete_profile(self, player_name: str) -> None:
+        if player_name not in self.player_profiles:
+            raise ValueError("Unknown profile")
+        self.player_profiles.pop(player_name, None)
+        await self.async_refresh_from_engine()
+
+    async def async_update_tournament_settings(self, *, name: str | None = None, target_score: int | None = None, enabled: bool | None = None) -> None:
+        if name is not None:
+            clean_name = str(name).strip() or "House Tournament"
+            self.tournament["name"] = clean_name
+        if target_score is not None:
+            self.tournament["target_score"] = max(1, int(target_score))
+        if enabled is not None:
+            self.tournament["enabled"] = bool(enabled)
+            if enabled and not self.tournament.get("started_at"):
+                self.tournament["started_at"] = int(time.time())
+            if not enabled and not self.tournament.get("completed_at"):
+                self.tournament["completed_at"] = int(time.time())
+        await self.async_refresh_from_engine()
+
+    async def async_clear_tournament_history(self) -> None:
+        self.tournament["history"] = []
+        self.tournament["champion"] = None
+        self.tournament["completed_at"] = None
+        await self.async_refresh_from_engine()
+
+    async def async_save_custom_trivia_pack(self, *, slug: str, name: str, questions: list[dict[str, Any]], description: str = "") -> dict[str, Any]:
+        clean_slug = self._slugify_pack_name(slug or name)
+        if not clean_slug:
+            raise ValueError("Trivia pack name is required")
+        normalized_questions = self._normalize_custom_trivia_questions(questions, category=clean_slug)
+        if len(normalized_questions) < 1:
+            raise ValueError("Trivia pack must contain at least one valid question")
+        pack = {
+            "slug": clean_slug,
+            "name": (name or clean_slug.replace("_", " ").title()).strip(),
+            "description": (description or "").strip(),
+            "question_count": len(normalized_questions),
+            "updated_at": int(time.time()),
+            "questions": normalized_questions,
+        }
+        self.custom_trivia_packs[clean_slug] = pack
+        await self.async_refresh_from_engine()
+        return {k: v for k, v in pack.items() if k != "questions"}
+
+    async def async_delete_custom_trivia_pack(self, slug: str) -> None:
+        clean_slug = self._slugify_pack_name(slug)
+        if clean_slug not in self.custom_trivia_packs:
+            raise ValueError("Unknown trivia pack")
+        self.custom_trivia_packs.pop(clean_slug, None)
+        await self.async_refresh_from_engine()
+
     @property
     def join_url(self) -> str:
         if not self.base_url:
@@ -816,6 +893,85 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 to_remove.append(ws)
         for ws in to_remove:
             self._sockets.discard(ws)
+
+    def _available_offline_trivia_categories(self) -> list[str]:
+        categories = list(TRIVIA_CATEGORIES)
+        for slug in sorted(self.custom_trivia_packs):
+            if slug not in categories:
+                categories.append(slug)
+        return categories
+
+    def _custom_trivia_pack_summaries(self) -> list[dict[str, Any]]:
+        packs = []
+        for slug, pack in self.custom_trivia_packs.items():
+            packs.append({
+                "slug": slug,
+                "name": pack.get("name", slug.replace("_", " ").title()),
+                "description": pack.get("description", ""),
+                "question_count": int(pack.get("question_count", len(pack.get("questions", [])))),
+                "updated_at": pack.get("updated_at"),
+                "questions": list(pack.get("questions", [])),
+            })
+        packs.sort(key=lambda item: item["name"].lower())
+        return packs
+
+    def _slugify_pack_name(self, value: str) -> str:
+        clean = "".join(ch.lower() if ch.isalnum() else "_" for ch in (value or "").strip())
+        while "__" in clean:
+            clean = clean.replace("__", "_")
+        return clean.strip("_")[:64]
+
+    def _normalize_custom_trivia_questions(self, questions: list[dict[str, Any]], *, category: str) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
+        for item in questions or []:
+            question = str(item.get("question") or "").strip()
+            correct_answer = str(item.get("correct_answer") or "").strip()
+            if not question or not correct_answer:
+                continue
+            choices = [str(x).strip() for x in item.get("choices", []) if str(x).strip()]
+            accepted_answers = [str(x).strip() for x in item.get("accepted_answers", []) if str(x).strip()]
+            if correct_answer not in accepted_answers:
+                accepted_answers.insert(0, correct_answer)
+            difficulty = str(item.get("difficulty") or "medium").strip().lower()
+            if difficulty not in {"easy", "medium", "hard", "easy_medium", "medium_hard"}:
+                difficulty = "medium"
+            age_range = str(item.get("age_range") or "18_plus").strip()
+            normalized.append({
+                "question": question,
+                "correct_answer": correct_answer,
+                "accepted_answers": accepted_answers,
+                "choices": choices[:6],
+                "explanation": str(item.get("explanation") or "").strip(),
+                "category": category,
+                "age_range": age_range,
+                "difficulty": difficulty,
+                "source": "custom_curated",
+            })
+        return normalized
+
+    def _get_custom_trivia_questions(self, *, category: str, age_range: str, difficulty: str, question_count: int) -> list[dict[str, Any]]:
+        pack = self.custom_trivia_packs.get(category, {})
+        source = [dict(item) for item in pack.get("questions", [])]
+        if not source:
+            raise ValueError("That custom trivia pack has no questions")
+        wanted_levels = {difficulty}
+        if difficulty in {"easy_medium", "medium_hard"}:
+            wanted_levels = set(difficulty.split("_"))
+        filtered = [item for item in source if item.get("difficulty", "medium") in wanted_levels]
+        if not filtered:
+            filtered = source
+        exact_age = [item for item in filtered if item.get("age_range") in {age_range, "all", "any", ""}]
+        if exact_age:
+            filtered = exact_age
+        results: list[dict[str, Any]] = []
+        while len(results) < max(1, question_count):
+            for item in filtered:
+                copy = dict(item)
+                copy["category"] = category
+                results.append(copy)
+                if len(results) >= question_count:
+                    break
+        return results[:question_count]
 
     def _profiles_summary(self) -> list[dict[str, Any]]:
         summaries = []
