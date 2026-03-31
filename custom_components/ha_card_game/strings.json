@@ -1,0 +1,95 @@
+{
+  "config": {
+    "abort": {
+      "single_instance_allowed": "Only a single HA Card Game instance is supported."
+    },
+    "step": {
+      "user": {
+        "title": "Set up HA Card Game",
+        "description": "Create the main card game entry and choose the default runtime behavior.",
+        "data": {
+          "enable_panel": "Enable sidebar panel",
+          "max_rounds": "Maximum rounds",
+          "allow_repeat_prompts": "Allow repeating prompts",
+          "default_game_mode": "Default game mode"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Enter a valid http or https URL.",
+      "round_range": "Rounds must be between 1 and 100.",
+      "invalid_game_mode": "Choose a supported game mode.",
+      "invalid_trivia_source": "Choose a supported trivia source.",
+      "invalid_content_mode": "Choose a supported content mode."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure HA Card Game"
+      },
+      "general": {
+        "title": "General settings",
+        "data": {
+          "enable_panel": "Enable sidebar panel",
+          "max_rounds": "Maximum rounds",
+          "allow_repeat_prompts": "Allow repeating prompts",
+          "default_game_mode": "Default game mode"
+        }
+      },
+      "content": {
+        "title": "Content and safety",
+        "data": {
+          "content_mode": "Content mode",
+          "require_ai_approval": "Require AI approval",
+          "allow_remote_players": "Allow remote players"
+        }
+      },
+      "remote": {
+        "title": "Remote access",
+        "description": "Optionally override the external URL used to generate player invite links.",
+        "data": {
+          "remote_base_url": "Remote base URL"
+        }
+      },
+      "ai": {
+        "title": "AI settings",
+        "data": {
+          "ai_enabled": "Enable AI generation",
+          "ai_use_local_fallback": "Use local fallback when AI is unavailable",
+          "ai_model": "AI model",
+          "ai_endpoint": "AI endpoint",
+          "ai_api_key": "AI API key"
+        }
+      },
+      "trivia": {
+        "title": "Trivia settings",
+        "data": {
+          "default_trivia_source": "Default trivia source",
+          "allowed_trivia_categories": "Allowed trivia categories"
+        }
+      }
+    },
+    "error": {
+      "invalid_url": "Enter a valid http or https URL.",
+      "round_range": "Rounds must be between 1 and 100.",
+      "invalid_game_mode": "Choose a supported game mode.",
+      "invalid_trivia_source": "Choose a supported trivia source.",
+      "invalid_content_mode": "Choose a supported content mode."
+    }
+  },
+  "issues": {
+    "remote_players_without_base_url": {
+      "title": "Remote players enabled without a Home Assistant external URL",
+      "description": "Remote players are enabled, but HA Card Game could not determine an external URL for Home Assistant. Configure an external URL, Home Assistant Cloud, or a trusted VPN before inviting remote players."
+    },
+    "ai_enabled_without_key_or_fallback": {
+      "title": "AI generation enabled without an API key or fallback",
+      "description": "AI generation is enabled, but no API key is configured and local fallback is disabled. Add an API key through the options flow or re-enable local fallback."
+    },
+    "no_trivia_categories_enabled": {
+      "title": "No trivia categories are enabled",
+      "description": "Trivia is enabled, but no valid trivia categories are available. Reopen the options flow and enable at least one category."
+    }
+  }
+}

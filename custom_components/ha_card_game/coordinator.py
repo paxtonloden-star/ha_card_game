@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import ADMIN_TOKEN_LENGTH, AI_QUEUE_MAX_ITEMS, DEFAULT_AUTO_ADVANCE_ENABLED, DEFAULT_AUTO_ADVANCE_SECONDS, DEFAULT_DECK, DEFAULT_FLIP_STYLE, DEFAULT_PARENTAL_CONTROLS, DEFAULT_REVEAL_DURATION_MS, DEFAULT_REVEAL_SOUND, DEFAULT_SUBMISSION_REVEAL_ENABLED, DEFAULT_SUBMISSION_REVEAL_STEP_MS, DEFAULT_TICK_SOUND_PACK, DEFAULT_THEME_PRESET, DOMAIN, JOIN_CODE_LENGTH, PLAYER_TOKEN_LENGTH, STORAGE_KEY, STORAGE_VERSION, WS_EVENT_STATE, GAME_MODE_CARDS, GAME_MODE_TRIVIA, TRIVIA_DIFFICULTY_BY_AGE, TRIVIA_CATEGORIES
+from .const import ADMIN_TOKEN_LENGTH, AI_QUEUE_MAX_ITEMS, CONF_AI_API_KEY, CONF_AI_ENABLED, CONF_AI_ENDPOINT, CONF_AI_MODEL, CONF_AI_USE_LOCAL_FALLBACK, CONF_ALLOW_REMOTE_PLAYERS, CONF_ALLOWED_TRIVIA_CATEGORIES, CONF_CONTENT_MODE, CONF_DEFAULT_GAME_MODE, CONF_DEFAULT_TRIVIA_SOURCE, CONF_MAX_ROUNDS, CONF_REMOTE_BASE_URL, CONF_REQUIRE_AI_APPROVAL, DEFAULT_AUTO_ADVANCE_ENABLED, DEFAULT_AUTO_ADVANCE_SECONDS, DEFAULT_DECK, DEFAULT_FLIP_STYLE, DEFAULT_PARENTAL_CONTROLS, DEFAULT_REMOTE_BASE_URL, DEFAULT_REVEAL_DURATION_MS, DEFAULT_REVEAL_SOUND, DEFAULT_SUBMISSION_REVEAL_ENABLED, DEFAULT_SUBMISSION_REVEAL_STEP_MS, DEFAULT_TICK_SOUND_PACK, DEFAULT_THEME_PRESET, DOMAIN, JOIN_CODE_LENGTH, PLAYER_TOKEN_LENGTH, STORAGE_KEY, STORAGE_VERSION, WS_EVENT_STATE, GAME_MODE_CARDS, GAME_MODE_TRIVIA, TRIVIA_DIFFICULTY_BY_AGE, TRIVIA_CATEGORIES
 from .deck_manager import DeckManager
 from .game_engine import CardGameEngine, GameState, Player
 from .ai_generator import AIGenerator, AISettings
@@ -81,6 +81,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "completed_at": None,
         }
         self.custom_trivia_packs: dict[str, dict[str, Any]] = {}
+        self.entry_options: dict[str, Any] = {}
 
     async def async_load(self) -> None:
         await self.deck_manager.async_load()
@@ -1161,6 +1162,50 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         team_a = sum(1 for player in self.engine.state.players if player.team == "Team A")
         team_b = sum(1 for player in self.engine.state.players if player.team == "Team B")
         return "Team A" if team_a <= team_b else "Team B"
+
+
+    async def async_apply_options(self, options: dict[str, Any]) -> None:
+        """Apply config-entry options to runtime state."""
+        self.entry_options = dict(options)
+
+        self.parental_controls = normalize_parental_settings({
+            **self.parental_controls,
+            "content_mode": options.get(CONF_CONTENT_MODE, self.parental_controls.get("content_mode")),
+            "require_ai_approval": options.get(CONF_REQUIRE_AI_APPROVAL, self.parental_controls.get("require_ai_approval")),
+            "allow_remote_players": options.get(CONF_ALLOW_REMOTE_PLAYERS, self.parental_controls.get("allow_remote_players")),
+            "allowed_trivia_categories": options.get(CONF_ALLOWED_TRIVIA_CATEGORIES, self.parental_controls.get("allowed_trivia_categories")),
+        })
+
+        self.game_mode = options.get(CONF_DEFAULT_GAME_MODE, self.game_mode)
+        self.base_url = (options.get(CONF_REMOTE_BASE_URL, self.base_url or DEFAULT_REMOTE_BASE_URL) or "").rstrip("/")
+        self.ai_generator.update_settings(
+            enabled=bool(options.get(CONF_AI_ENABLED, self.ai_generator.settings.enabled)),
+            endpoint=options.get(CONF_AI_ENDPOINT, self.ai_generator.settings.endpoint),
+            model=options.get(CONF_AI_MODEL, self.ai_generator.settings.model),
+            api_key=options.get(CONF_AI_API_KEY, self.ai_generator.settings.api_key),
+            use_local_fallback=bool(options.get(CONF_AI_USE_LOCAL_FALLBACK, self.ai_generator.settings.use_local_fallback)),
+        )
+        self.trivia.source = options.get(CONF_DEFAULT_TRIVIA_SOURCE, getattr(self.trivia, "source", "offline_curated"))
+        await self.async_refresh_from_engine()
+
+    def options_summary(self) -> dict[str, Any]:
+        """Return a sanitized runtime summary of entry options."""
+        return {
+            "max_rounds": int(self.entry_options.get(CONF_MAX_ROUNDS, 10)),
+            "content_mode": self.parental_controls.get("content_mode"),
+            "require_ai_approval": bool(self.parental_controls.get("require_ai_approval", True)),
+            "allow_remote_players": bool(self.parental_controls.get("allow_remote_players", False)),
+            "allowed_trivia_categories": list(self.parental_controls.get("allowed_trivia_categories", [])),
+            "default_game_mode": self.entry_options.get(CONF_DEFAULT_GAME_MODE, GAME_MODE_CARDS),
+            "default_trivia_source": self.entry_options.get(CONF_DEFAULT_TRIVIA_SOURCE, "offline_curated"),
+            "ai": {
+                "enabled": bool(self.ai_generator.settings.enabled),
+                "model": self.ai_generator.settings.model,
+                "endpoint": self.ai_generator.settings.endpoint,
+                "use_local_fallback": bool(self.ai_generator.settings.use_local_fallback),
+                "has_api_key": bool(self.ai_generator.settings.api_key),
+            },
+        }
 
     def _prune_tokens(self) -> None:
         active_names = {player.name for player in self.engine.state.players}

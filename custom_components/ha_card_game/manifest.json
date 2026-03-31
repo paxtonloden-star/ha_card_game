@@ -1,7 +1,7 @@
 {
   "domain": "ha_card_game",
   "name": "HA Card Game",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "documentation": "https://example.com/ha_card_game",
   "issue_tracker": "https://example.com/ha_card_game/issues",
   "config_flow": true,
@@ -13,5 +13,6 @@
     "segno==1.6.6"
   ],
   "dependencies": [],
-  "integration_type": "service"
+  "integration_type": "service",
+  "system_health": true
 }

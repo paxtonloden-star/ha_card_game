@@ -10,10 +10,23 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 
 from .api import async_register_api
-from .const import CONF_ENABLE_PANEL, DOMAIN, PLATFORMS, SERVICE_ADD_PLAYER, SERVICE_NEXT_ROUND, SERVICE_PICK_WINNER, SERVICE_RELOAD_DECKS, SERVICE_RESET_GAME, SERVICE_SET_DECK, SERVICE_START_GAME, SERVICE_SUBMIT_CARD
+from .const import (
+    CONF_ENABLE_PANEL,
+    DOMAIN,
+    PLATFORMS,
+    SERVICE_ADD_PLAYER,
+    SERVICE_NEXT_ROUND,
+    SERVICE_PICK_WINNER,
+    SERVICE_RELOAD_DECKS,
+    SERVICE_RESET_GAME,
+    SERVICE_SET_DECK,
+    SERVICE_START_GAME,
+    SERVICE_SUBMIT_CARD,
+)
 from .coordinator import CardGameCoordinator
 from .intent import async_register_intents
 from .panel import async_register_panel
+from .repairs import async_sync_repairs
 
 SERVICE_PLAYER_NAME = "player_name"
 SERVICE_CARD_TEXT = "card_text"
@@ -25,23 +38,40 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = CardGameCoordinator(hass)
     await coordinator.async_load()
-    hass.data[DOMAIN][entry.entry_id] = coordinator
+    await coordinator.async_apply_options({**entry.data, **entry.options})
 
-    if entry.data.get(CONF_ENABLE_PANEL, True):
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+    entry.runtime_data = coordinator
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
+
+    if entry.options.get(CONF_ENABLE_PANEL, entry.data.get(CONF_ENABLE_PANEL, True)):
         await async_register_panel(hass)
 
     await async_register_api(hass, coordinator)
     await async_register_intents(hass, coordinator)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await _async_register_services(hass, coordinator)
+    await async_sync_repairs(hass, entry, coordinator)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id)
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        entry.runtime_data = None
     return unload_ok
+
+
+async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    coordinator: CardGameCoordinator | None = getattr(entry, "runtime_data", None)
+    if coordinator is None:
+        return
+    panel_enabled = entry.options.get(CONF_ENABLE_PANEL, entry.data.get(CONF_ENABLE_PANEL, True))
+    await coordinator.async_apply_options({**entry.data, **entry.options})
+    if panel_enabled:
+        await async_register_panel(hass)
+    await async_sync_repairs(hass, entry, coordinator)
 
 
 async def _async_register_services(hass: HomeAssistant, coordinator: CardGameCoordinator) -> None:

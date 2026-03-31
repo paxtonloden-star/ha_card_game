@@ -30,10 +30,31 @@ STATE_RESULTS = "results"
 CONF_ENABLE_PANEL = "enable_panel"
 CONF_MAX_ROUNDS = "max_rounds"
 CONF_ALLOW_REPEAT_PROMPTS = "allow_repeat_prompts"
+CONF_CONTENT_MODE = "content_mode"
+CONF_REQUIRE_AI_APPROVAL = "require_ai_approval"
+CONF_ALLOW_REMOTE_PLAYERS = "allow_remote_players"
+CONF_ALLOWED_TRIVIA_CATEGORIES = "allowed_trivia_categories"
+CONF_DEFAULT_GAME_MODE = "default_game_mode"
+CONF_DEFAULT_TRIVIA_SOURCE = "default_trivia_source"
+CONF_AI_ENABLED = "ai_enabled"
+CONF_AI_ENDPOINT = "ai_endpoint"
+CONF_AI_MODEL = "ai_model"
+CONF_AI_API_KEY = "ai_api_key"
+CONF_AI_USE_LOCAL_FALLBACK = "ai_use_local_fallback"
+CONF_REMOTE_BASE_URL = "remote_base_url"
+
 
 DEFAULT_ENABLE_PANEL = True
 DEFAULT_MAX_ROUNDS = 10
 DEFAULT_ALLOW_REPEAT_PROMPTS = False
+DEFAULT_CONTENT_MODE = "family_safe"
+DEFAULT_REQUIRE_AI_APPROVAL = True
+DEFAULT_ALLOW_REMOTE_PLAYERS = False
+DEFAULT_DEFAULT_GAME_MODE = "cards"
+DEFAULT_DEFAULT_TRIVIA_SOURCE = "offline_curated"
+DEFAULT_AI_ENABLED = False
+DEFAULT_AI_USE_LOCAL_FALLBACK = True
+DEFAULT_REMOTE_BASE_URL = ""
 
 JOIN_CODE_LENGTH = 6
 PLAYER_TOKEN_LENGTH = 32
