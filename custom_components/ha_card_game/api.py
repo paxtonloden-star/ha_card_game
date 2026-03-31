@@ -203,6 +203,10 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                     "assign_player_team",
                     "create_remote_invite",
                     "buzz_player",
+                    "set_scene_media_config",
+                    "trigger_scene_media_event",
+                    "start_tournament",
+                    "end_tournament",
                 ],
                 "reveal": {
                     "sound_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("sound_options", [])),
@@ -218,7 +222,9 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                     "export_url": f"/api/{DOMAIN}/host/decks/export",
                 },
                 "ai": {"settings": self.coordinator.ai_generator.settings.as_dict()},
-                "trivia": {"categories": ["history","fun_facts","geography","movies","1990s","2000s","2010s","computer_games"], "age_ranges": ["6_8","9_12","13_17","18_plus"], "teams": ["Solo", "Team A", "Team B"], "buzzer_modes": [False, True]},
+                "trivia": {"categories": ["history","fun_facts","geography","movies","1990s","2000s","2010s","computer_games"], "age_ranges": ["6_8","9_12","13_17","18_plus"], "teams": ["Solo", "Team A", "Team B"], "buzzer_modes": [False, True], "sources": ["ai", "offline_curated"]},
+                "scene_media": dict(self.coordinator.scene_media_config),
+                "tournament": self.coordinator._tournament_state(),
             },
         })
 
@@ -325,6 +331,7 @@ class CardGameHostActionView(BaseCardGameHostView):
                     age_range=str(data.get("age_range", "18_plus")).strip(),
                     difficulty=str(data.get("difficulty")).strip() if data.get("difficulty") else None,
                     question_count=int(data.get("question_count", 10)),
+                    source=str(data.get("source", "ai")).strip() or "ai",
                 )
             elif action == "start_trivia_round":
                 await self.coordinator.async_start_trivia_round()
@@ -346,6 +353,31 @@ class CardGameHostActionView(BaseCardGameHostView):
             elif action == "create_remote_invite":
                 invite = await self.coordinator.async_create_remote_invite(str(data.get("player_name", "")).strip())
                 return self.json({"ok": True, "state": self.coordinator.player_state(None), "invite": invite})
+            elif action == "set_scene_media_config":
+                await self.coordinator.async_set_scene_media_config(
+                    enabled=bool(data.get("enabled")) if data.get("enabled") is not None else None,
+                    start_scene=str(data.get("start_scene")).strip() if data.get("start_scene") is not None else None,
+                    reveal_scene=str(data.get("reveal_scene")).strip() if data.get("reveal_scene") is not None else None,
+                    winner_scene=str(data.get("winner_scene")).strip() if data.get("winner_scene") is not None else None,
+                    media_player=str(data.get("media_player")).strip() if data.get("media_player") is not None else None,
+                    start_sound=str(data.get("start_sound")).strip() if data.get("start_sound") is not None else None,
+                    reveal_sound_media=str(data.get("reveal_sound_media")).strip() if data.get("reveal_sound_media") is not None else None,
+                    winner_sound=str(data.get("winner_sound")).strip() if data.get("winner_sound") is not None else None,
+                    volume_level=float(data.get("volume_level")) if data.get("volume_level") is not None else None,
+                )
+            elif action == "trigger_scene_media_event":
+                await self.coordinator.async_trigger_scene_media_event(
+                    str(data.get("event_name", "winner")).strip() or "winner",
+                    str(data.get("winner")).strip() if data.get("winner") is not None else None,
+                )
+            elif action == "start_tournament":
+                await self.coordinator.async_start_tournament(
+                    name=str(data.get("name", "House Tournament")).strip() or "House Tournament",
+                    target_score=int(data.get("target_score", 10)),
+                    reset_scores=bool(data.get("reset_scores", True)),
+                )
+            elif action == "end_tournament":
+                await self.coordinator.async_end_tournament()
             else:
                 return self.json_error("Unknown host action", 404)
         except ValueError as err:

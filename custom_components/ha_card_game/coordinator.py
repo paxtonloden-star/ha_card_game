@@ -8,17 +8,18 @@ import secrets
 import string
 import time
 from typing import Any
+from copy import deepcopy
 
 from aiohttp import web
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import ADMIN_TOKEN_LENGTH, AI_QUEUE_MAX_ITEMS, DEFAULT_AUTO_ADVANCE_ENABLED, DEFAULT_AUTO_ADVANCE_SECONDS, DEFAULT_DECK, DEFAULT_FLIP_STYLE, DEFAULT_PARENTAL_CONTROLS, DEFAULT_REVEAL_DURATION_MS, DEFAULT_REVEAL_SOUND, DEFAULT_SUBMISSION_REVEAL_ENABLED, DEFAULT_SUBMISSION_REVEAL_STEP_MS, DEFAULT_TICK_SOUND_PACK, DEFAULT_THEME_PRESET, DOMAIN, JOIN_CODE_LENGTH, PLAYER_TOKEN_LENGTH, STORAGE_KEY, STORAGE_VERSION, WS_EVENT_STATE, GAME_MODE_CARDS, GAME_MODE_TRIVIA, TRIVIA_DIFFICULTY_BY_AGE
+from .const import ADMIN_TOKEN_LENGTH, AI_QUEUE_MAX_ITEMS, DEFAULT_AUTO_ADVANCE_ENABLED, DEFAULT_AUTO_ADVANCE_SECONDS, DEFAULT_DECK, DEFAULT_FLIP_STYLE, DEFAULT_PARENTAL_CONTROLS, DEFAULT_REVEAL_DURATION_MS, DEFAULT_REVEAL_SOUND, DEFAULT_SUBMISSION_REVEAL_ENABLED, DEFAULT_SUBMISSION_REVEAL_STEP_MS, DEFAULT_TICK_SOUND_PACK, DEFAULT_THEME_PRESET, DOMAIN, JOIN_CODE_LENGTH, PLAYER_TOKEN_LENGTH, STORAGE_KEY, STORAGE_VERSION, WS_EVENT_STATE, GAME_MODE_CARDS, GAME_MODE_TRIVIA, TRIVIA_DIFFICULTY_BY_AGE, TRIVIA_CATEGORIES
 from .deck_manager import DeckManager
 from .game_engine import CardGameEngine, GameState, Player
 from .ai_generator import AIGenerator, AISettings
-from .trivia_manager import TriviaSession
+from .trivia_manager import TriviaSession, get_curated_trivia_questions
 from .moderation import moderate_deck_payload, moderate_trivia_questions, normalize_parental_settings
 
 _LOGGER = logging.getLogger(__name__)
@@ -57,6 +58,28 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.trivia_steal_from_player: str | None = None
         self.parental_controls = normalize_parental_settings(DEFAULT_PARENTAL_CONTROLS)
         self.ai_moderation_queue: list[dict[str, Any]] = []
+        self.player_profiles: dict[str, dict[str, Any]] = {}
+        self.scene_media_config: dict[str, Any] = {
+            "enabled": False,
+            "start_scene": "",
+            "reveal_scene": "",
+            "winner_scene": "",
+            "media_player": "",
+            "start_sound": "",
+            "reveal_sound_media": "",
+            "winner_sound": "",
+            "volume_level": 0.55,
+            "last_event": None,
+        }
+        self.tournament: dict[str, Any] = {
+            "enabled": False,
+            "name": "House Tournament",
+            "target_score": 10,
+            "history": [],
+            "champion": None,
+            "started_at": None,
+            "completed_at": None,
+        }
 
     async def async_load(self) -> None:
         await self.deck_manager.async_load()
@@ -109,6 +132,9 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.remote_invites = saved.get("remote_invites", {})
             self.parental_controls = normalize_parental_settings(saved.get("parental_controls", DEFAULT_PARENTAL_CONTROLS))
             self.ai_moderation_queue = list(saved.get("ai_moderation_queue", []))[:AI_QUEUE_MAX_ITEMS]
+            self.player_profiles = dict(saved.get("player_profiles", {}))
+            self.scene_media_config = {**self.scene_media_config, **dict(saved.get("scene_media_config", {}))}
+            self.tournament = {**self.tournament, **dict(saved.get("tournament", {}))}
             self.trivia_team_mode = bool(saved.get("trivia_team_mode", False))
             self.last_trivia_results = list(saved.get("last_trivia_results", []))
             self.trivia_buzzer_mode = bool(saved.get("trivia_buzzer_mode", False))
@@ -119,7 +145,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.trivia_steal_active = bool(saved.get("trivia_steal_active", False))
             self.trivia_steal_team = saved.get("trivia_steal_team")
             self.trivia_steal_from_player = saved.get("trivia_steal_from_player")
-            self.trivia.load_questions(saved.get("trivia_questions", []), category=saved.get("trivia_category", "fun_facts"), age_range=saved.get("trivia_age_range", "18_plus"), difficulty=saved.get("trivia_difficulty", "medium"))
+            self.trivia.load_questions(saved.get("trivia_questions", []), category=saved.get("trivia_category", "fun_facts"), age_range=saved.get("trivia_age_range", "18_plus"), difficulty=saved.get("trivia_difficulty", "medium"), source=saved.get("trivia_source", "ai"))
             self.trivia.current_index = int(saved.get("trivia_current_index", -1))
             ai_saved = saved.get("ai_settings", {})
             self.ai_generator.update_settings(enabled=bool(ai_saved.get("enabled", False)), endpoint=ai_saved.get("endpoint") or self.ai_generator.settings.endpoint, model=ai_saved.get("model") or self.ai_generator.settings.model, use_local_fallback=bool(ai_saved.get("use_local_fallback", True)))
@@ -156,7 +182,11 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "remote_invites": self.remote_invites,
             "parental_controls": dict(self.parental_controls),
             "ai_moderation_queue": list(self.ai_moderation_queue)[:AI_QUEUE_MAX_ITEMS],
+            "player_profiles": deepcopy(self.player_profiles),
+            "scene_media_config": dict(self.scene_media_config),
+            "tournament": deepcopy(self.tournament),
             "trivia_questions": list(self.trivia.questions),
+            "trivia_source": self.trivia.source,
             "trivia_current_index": self.trivia.current_index,
             "trivia_category": self.trivia.category,
             "trivia_age_range": self.trivia.age_range,
@@ -205,6 +235,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.trivia_buzzer_mode = False
         self.trivia_buzz_bonus = 1
         self.trivia_steal_enabled = False
+        self._clear_active_tournament_if_complete(reset_only=True)
         await self.async_refresh_from_engine()
 
     async def async_start_game(self, deck_name: str | None = None, game_mode: str | None = None) -> None:
@@ -220,6 +251,9 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             allow_free_text=deck.allow_free_text,
             hand_size=deck.hand_size,
         )
+        for player in self.engine.state.players:
+            self._ensure_profile(player.name)["games_played"] += 1
+        await self.async_trigger_scene_media_event("game_start")
         await self.async_refresh_from_engine()
 
     async def async_set_deck(self, deck_name: str) -> None:
@@ -244,6 +278,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             created_player = self._find_player(player_name)
             if created_player is not None:
                 created_player.team = assigned_team
+        self._ensure_profile(player_name)
         token = self.player_tokens.get(player_name) or self._generate_token(PLAYER_TOKEN_LENGTH)
         self.player_tokens[player_name] = token
         await self.async_refresh_from_engine()
@@ -278,6 +313,9 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self.engine.state.current_judge != player_name:
             raise ValueError("Only the current judge can pick the winner")
         self.engine.pick_winner_submission(submission_id)
+        self._record_card_round_winner(self.engine.state.winner)
+        self._update_tournament_progress(self.engine.state.winner)
+        await self.async_trigger_scene_media_event("winner", self.engine.state.winner)
         await self.async_refresh_from_engine()
 
 
@@ -294,6 +332,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.trivia_buzz_owner = player_name
         player = self._find_player(player_name)
         self.trivia_buzz_team = player.team if player else None
+        self._ensure_profile(player_name)["buzzes"] += 1
         await self.async_refresh_from_engine()
         return {"buzz_owner": self.trivia_buzz_owner, "buzz_team": self.trivia_buzz_team, "steal_active": self.trivia_steal_active}
 
@@ -384,10 +423,15 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "steal_active": self.trivia_steal_active,
             "steal_team": self.trivia_steal_team,
             "steal_from_player": self.trivia_steal_from_player,
+            "source_options": ["ai", "offline_curated"],
+            "offline_pack_categories": list(TRIVIA_CATEGORIES),
         }
         state["remote_join_url"] = self.join_url
         state["remote_enabled"] = bool(self.base_url)
         state["ai"] = self.ai_generator.settings.as_dict()
+        state["profiles"] = self._profiles_summary()
+        state["scene_media"] = dict(self.scene_media_config)
+        state["tournament"] = self._tournament_state()
         state["parental_controls"] = dict(self.parental_controls)
         state["ai_moderation_queue"] = [
             {
@@ -466,7 +510,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 await self.async_refresh_from_engine()
                 return {"kind": "deck", "deck": deck.as_dict()}
             if item.get("kind") == "trivia":
-                self.trivia.load_questions(payload.get("questions", []), category=payload.get("category", "fun_facts"), age_range=payload.get("age_range", "18_plus"), difficulty=payload.get("difficulty", "medium"))
+                self.trivia.load_questions(payload.get("questions", []), category=payload.get("category", "fun_facts"), age_range=payload.get("age_range", "18_plus"), difficulty=payload.get("difficulty", "medium"), source=payload.get("source", "ai"))
                 self.game_mode = GAME_MODE_TRIVIA
                 self.last_trivia_results = []
                 self._reset_trivia_buzzer_state()
@@ -513,13 +557,17 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_refresh_from_engine()
         return deck.as_dict()
 
-    async def async_prepare_trivia(self, *, category: str, age_range: str, difficulty: str | None = None, question_count: int = 10) -> None:
+    async def async_prepare_trivia(self, *, category: str, age_range: str, difficulty: str | None = None, question_count: int = 10, source: str = "ai") -> None:
         difficulty = difficulty or TRIVIA_DIFFICULTY_BY_AGE.get(age_range, "medium")
         if self.parental_controls.get("enabled"):
             allowed_categories = set(self.parental_controls.get("allowed_trivia_categories", []))
             if category not in allowed_categories:
                 raise ValueError("That trivia category is blocked by parental controls")
-        questions = await self.ai_generator.generate_trivia(category=category, age_range=age_range, difficulty=difficulty, question_count=question_count)
+        source = (source or "ai").strip().lower()
+        if source == "offline_curated":
+            questions = get_curated_trivia_questions(category=category, age_range=age_range, difficulty=difficulty, question_count=question_count)
+        else:
+            questions = await self.ai_generator.generate_trivia(category=category, age_range=age_range, difficulty=difficulty, question_count=question_count)
         moderation_issues: list[dict[str, Any]] = []
         if self.parental_controls.get("enabled"):
             questions, moderation_issues = moderate_trivia_questions(questions, content_mode=self.parental_controls.get("content_mode", "family_safe"))
@@ -529,7 +577,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._queue_ai_item("trivia", f"{category.title()} trivia", {"questions": questions, "category": category, "age_range": age_range, "difficulty": difficulty}, f"{len(questions)} questions in {category}", moderation_issues)
             await self.async_refresh_from_engine()
             return
-        self.trivia.load_questions(questions, category=category, age_range=age_range, difficulty=difficulty)
+        self.trivia.load_questions(questions, category=category, age_range=age_range, difficulty=difficulty, source=source)
         self.game_mode = GAME_MODE_TRIVIA
         self.last_trivia_results = []
         self._reset_trivia_buzzer_state()
@@ -633,7 +681,10 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.engine.state.winner = ", ".join(correct_players) if correct_players else "No correct answers"
         self.engine.state.winner_card = q.get("correct_answer")
         self.engine.state.winner_submission_id = None
+        self._record_trivia_results_in_profiles(results)
+        self._update_tournament_progress(self.engine.state.winner)
         self._reset_trivia_buzzer_state()
+        await self.async_trigger_scene_media_event("winner", self.engine.state.winner)
         await self.async_refresh_from_engine()
         return {"correct_players": correct_players, "correct_answer": q.get("correct_answer"), "explanation": q.get("explanation", ""), "steal_available": False}
 
@@ -674,6 +725,70 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_refresh_from_engine()
         return {"player_name": player_name, "url": url}
 
+    async def async_set_scene_media_config(self, **kwargs: Any) -> None:
+        for key, value in kwargs.items():
+            if value is None or key not in self.scene_media_config:
+                continue
+            self.scene_media_config[key] = value
+        if "volume_level" in self.scene_media_config:
+            try:
+                self.scene_media_config["volume_level"] = max(0.0, min(1.0, float(self.scene_media_config["volume_level"])))
+            except Exception:
+                self.scene_media_config["volume_level"] = 0.55
+        await self.async_refresh_from_engine()
+
+    async def async_trigger_scene_media_event(self, event_name: str, winner: str | None = None) -> None:
+        self.scene_media_config["last_event"] = {"event": event_name, "winner": winner, "at": int(time.time())}
+        services = getattr(self.hass, "services", None)
+        if not services or not self.scene_media_config.get("enabled"):
+            await self.async_refresh_from_engine()
+            return
+        event_map = {
+            "game_start": self.scene_media_config.get("start_scene"),
+            "reveal": self.scene_media_config.get("reveal_scene"),
+            "winner": self.scene_media_config.get("winner_scene"),
+        }
+        scene_entity = event_map.get(event_name) or ""
+        media_player = self.scene_media_config.get("media_player") or ""
+        sound_map = {
+            "game_start": self.scene_media_config.get("start_sound"),
+            "reveal": self.scene_media_config.get("reveal_sound_media"),
+            "winner": self.scene_media_config.get("winner_sound"),
+        }
+        media_content_id = sound_map.get(event_name) or ""
+        if scene_entity and hasattr(services, "async_call"):
+            try:
+                await services.async_call("scene", "turn_on", {"entity_id": scene_entity}, blocking=False)
+            except Exception:
+                pass
+        if media_player and media_content_id and hasattr(services, "async_call"):
+            try:
+                await services.async_call("media_player", "volume_set", {"entity_id": media_player, "volume_level": self.scene_media_config.get("volume_level", 0.55)}, blocking=False)
+                await services.async_call("media_player", "play_media", {"entity_id": media_player, "media_content_id": media_content_id, "media_content_type": "music"}, blocking=False)
+            except Exception:
+                pass
+        await self.async_refresh_from_engine()
+
+    async def async_start_tournament(self, name: str = "House Tournament", target_score: int = 10, reset_scores: bool = True) -> None:
+        self.tournament = {
+            "enabled": True,
+            "name": (name or "House Tournament").strip(),
+            "target_score": max(1, int(target_score)),
+            "history": [],
+            "champion": None,
+            "started_at": int(time.time()),
+            "completed_at": None,
+        }
+        if reset_scores:
+            for player in self.engine.state.players:
+                player.score = 0
+        self._ensure_profiles_for_players()
+        await self.async_refresh_from_engine()
+
+    async def async_end_tournament(self) -> None:
+        self._clear_active_tournament_if_complete(force=True)
+        await self.async_refresh_from_engine()
+
     @property
     def join_url(self) -> str:
         if not self.base_url:
@@ -701,6 +816,101 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 to_remove.append(ws)
         for ws in to_remove:
             self._sockets.discard(ws)
+
+    def _profiles_summary(self) -> list[dict[str, Any]]:
+        summaries = []
+        for name, profile in self.player_profiles.items():
+            summaries.append({
+                "name": name,
+                **profile,
+                "accuracy": round((profile.get("trivia_correct", 0) / profile.get("trivia_answered", 1)) * 100, 1) if profile.get("trivia_answered", 0) else 0.0,
+            })
+        return sorted(summaries, key=lambda item: (-int(item.get("total_points", 0)), item["name"].lower()))
+
+    def _tournament_state(self) -> dict[str, Any]:
+        standings = [{"name": p.name, "score": p.score, "team": p.team} for p in self.engine.state.players]
+        standings.sort(key=lambda item: (-item["score"], item["name"].lower()))
+        return {**self.tournament, "standings": standings}
+
+    def _ensure_profile(self, player_name: str) -> dict[str, Any]:
+        key = player_name.strip()
+        if key not in self.player_profiles:
+            self.player_profiles[key] = {
+                "games_played": 0,
+                "card_round_wins": 0,
+                "trivia_correct": 0,
+                "trivia_answered": 0,
+                "buzzes": 0,
+                "steal_wins": 0,
+                "tournament_wins": 0,
+                "total_points": 0,
+                "last_seen": int(time.time()),
+            }
+        self.player_profiles[key]["last_seen"] = int(time.time())
+        return self.player_profiles[key]
+
+    def _ensure_profiles_for_players(self) -> None:
+        for player in self.engine.state.players:
+            self._ensure_profile(player.name)
+
+    def _record_card_round_winner(self, winner_name: str | None) -> None:
+        if not winner_name:
+            return
+        profile = self._ensure_profile(winner_name)
+        profile["card_round_wins"] += 1
+
+    def _record_trivia_results_in_profiles(self, results: list[dict[str, Any]]) -> None:
+        for item in results:
+            profile = self._ensure_profile(item.get("player", ""))
+            if not item.get("player"):
+                continue
+            profile["trivia_answered"] += 1
+            if item.get("correct"):
+                profile["trivia_correct"] += 1
+            if item.get("steal_attempt") and item.get("correct"):
+                profile["steal_wins"] += 1
+
+    def _refresh_profile_totals(self) -> None:
+        self._ensure_profiles_for_players()
+        score_map = {player.name: int(player.score) for player in self.engine.state.players}
+        for name, profile in self.player_profiles.items():
+            if name in score_map:
+                profile["total_points"] = score_map[name]
+
+    def _update_tournament_progress(self, winner_name: str | None = None) -> None:
+        self._refresh_profile_totals()
+        if not self.tournament.get("enabled"):
+            return
+        entry = {
+            "at": int(time.time()),
+            "mode": self.game_mode,
+            "round_number": self.engine.state.round_number,
+            "winner": winner_name or self.engine.state.winner,
+            "scoreboard": [{"name": p.name, "score": p.score} for p in self.engine.state.players],
+        }
+        history = list(self.tournament.get("history", []))
+        history.append(entry)
+        self.tournament["history"] = history[-100:]
+        standings = sorted(self.engine.state.players, key=lambda p: (-p.score, p.name.lower()))
+        if standings and standings[0].score >= int(self.tournament.get("target_score", 10)):
+            top_score = standings[0].score
+            leaders = [p for p in standings if p.score == top_score]
+            if len(leaders) == 1:
+                champion = leaders[0].name
+                self.tournament["champion"] = champion
+                self.tournament["completed_at"] = int(time.time())
+                self.tournament["enabled"] = False
+                self._ensure_profile(champion)["tournament_wins"] += 1
+
+    def _clear_active_tournament_if_complete(self, force: bool = False, reset_only: bool = False) -> None:
+        if force or self.tournament.get("champion"):
+            self.tournament["enabled"] = False
+            if force:
+                self.tournament["completed_at"] = int(time.time())
+        if reset_only:
+            self.tournament["champion"] = None
+            self.tournament["history"] = []
+            self.tournament["completed_at"] = None
 
     def _sync_auto_advance(self) -> None:
         state = self.engine.state
