@@ -1,0 +1,31 @@
+input_button:
+  ha_card_game_start:
+    name: Start HA Card Game
+  ha_card_game_next_round:
+    name: HA Card Game Next Round
+  ha_card_game_reset:
+    name: Reset HA Card Game
+
+automation:
+  - alias: Start HA Card Game from helper
+    triggers:
+      - trigger: state
+        entity_id: input_button.ha_card_game_start
+    actions:
+      - action: ha_card_game.start_game
+        data:
+          deck_name: default_family
+
+  - alias: Next HA Card Game round from helper
+    triggers:
+      - trigger: state
+        entity_id: input_button.ha_card_game_next_round
+    actions:
+      - action: ha_card_game.next_round
+
+  - alias: Reset HA Card Game from helper
+    triggers:
+      - trigger: state
+        entity_id: input_button.ha_card_game_reset
+    actions:
+      - action: ha_card_game.reset_game
