@@ -1151,6 +1151,7 @@
       function render(state) {
         latestState = state;
         if (window.renderAiModerationQueue) window.renderAiModerationQueue();
+        if (window.renderManualEditor) window.renderManualEditor();
         el('joinCodeTop').textContent = state.join_code;
         el('joinCodeMain').textContent = state.join_code;
         el('joinUrl').value = state.join_url;
@@ -1528,7 +1529,204 @@
         window.renderAiModerationQueue = renderAiModerationQueue;
       }
 
+
+      function ensureManualHostEditor() {
+        const hostRoot = el('hostControls');
+        if (!hostRoot || el('manualEditorMount')) return;
+        const wrap = document.createElement('div');
+        wrap.id = 'manualEditorMount';
+        wrap.className = 'card';
+        wrap.style.marginTop = '16px';
+        wrap.innerHTML = `
+          <h3>Manual host editor</h3>
+          <p class="muted">Production-oriented editor for player profiles, tournament settings, and custom offline trivia packs.</p>
+          <div class="control-grid">
+            <div>
+              <label class="label" for="profileSelect">Player profile</label>
+              <select id="profileSelect"></select>
+            </div>
+            <div>
+              <label class="label" for="profileGamesPlayedInput">Games played</label>
+              <input id="profileGamesPlayedInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileCardWinsInput">Card wins</label>
+              <input id="profileCardWinsInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileTriviaCorrectInput">Trivia correct</label>
+              <input id="profileTriviaCorrectInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileTriviaAnsweredInput">Trivia answered</label>
+              <input id="profileTriviaAnsweredInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileBuzzesInput">Buzzes</label>
+              <input id="profileBuzzesInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileStealsInput">Steal wins</label>
+              <input id="profileStealsInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileTournamentWinsInput">Tournament wins</label>
+              <input id="profileTournamentWinsInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileTotalPointsInput">Total points</label>
+              <input id="profileTotalPointsInput" type="number" min="0" value="0" />
+            </div>
+          </div>
+          <div class="actions wrap" style="margin-top:12px;">
+            <button class="secondary" id="saveProfileBtn">Save profile</button>
+            <button class="secondary" id="resetProfileBtn">Reset profile</button>
+            <button class="danger" id="deleteProfileBtn">Delete profile</button>
+          </div>
+
+          <h3 style="margin-top:18px;">Tournament editor</h3>
+          <div class="control-grid">
+            <div><label class="label" for="manualTournamentNameInput">Tournament name</label><input id="manualTournamentNameInput" /></div>
+            <div><label class="label" for="manualTournamentTargetInput">Target score</label><input id="manualTournamentTargetInput" type="number" min="1" value="10" /></div>
+            <div><label class="label" for="manualTournamentEnabledSelect">Tournament enabled</label><select id="manualTournamentEnabledSelect"><option value="true">On</option><option value="false">Off</option></select></div>
+          </div>
+          <div class="actions wrap" style="margin-top:12px;">
+            <button class="secondary" id="saveTournamentEditorBtn">Save tournament settings</button>
+            <button class="secondary" id="clearTournamentHistoryBtn">Clear tournament history</button>
+          </div>
+
+          <h3 style="margin-top:18px;">Custom offline trivia pack editor</h3>
+          <div class="control-grid">
+            <div><label class="label" for="customTriviaPackSelect">Existing pack</label><select id="customTriviaPackSelect"></select></div>
+            <div><label class="label" for="customTriviaPackNameInput">Pack name</label><input id="customTriviaPackNameInput" placeholder="Road Trip Facts" /></div>
+            <div><label class="label" for="customTriviaPackSlugInput">Pack slug</label><input id="customTriviaPackSlugInput" placeholder="road_trip_facts" /></div>
+          </div>
+          <div class="control-grid" style="margin-top:12px;">
+            <div style="grid-column:1 / -1;"><label class="label" for="customTriviaPackDescriptionInput">Description</label><input id="customTriviaPackDescriptionInput" placeholder="Family road trip trivia for mixed ages" /></div>
+          </div>
+          <div style="margin-top:12px;">
+            <label class="label" for="customTriviaQuestionsInput">Questions JSON array</label>
+            <textarea id="customTriviaQuestionsInput" style="min-height:220px;" placeholder='[{"question":"What color is the sun?","correct_answer":"Yellow","choices":["Blue","Yellow","Green","Purple"],"accepted_answers":["Yellow"],"difficulty":"easy","age_range":"6_8","explanation":"Basic kid-safe example."}]'></textarea>
+          </div>
+          <div class="actions wrap" style="margin-top:12px;">
+            <button class="secondary" id="saveCustomTriviaPackBtn">Save trivia pack</button>
+            <button class="danger" id="deleteCustomTriviaPackBtn">Delete trivia pack</button>
+          </div>
+          <div class="notice hidden" id="manualEditorNotice"></div>
+        `;
+        hostRoot.appendChild(wrap);
+
+        const loadSelectedProfile = () => {
+          const profiles = (latestState && latestState.profiles) || [];
+          const selected = profiles.find((item) => item.name === el('profileSelect').value) || profiles[0];
+          if (!selected) return;
+          el('profileSelect').value = selected.name;
+          el('profileGamesPlayedInput').value = selected.games_played || 0;
+          el('profileCardWinsInput').value = selected.card_round_wins || 0;
+          el('profileTriviaCorrectInput').value = selected.trivia_correct || 0;
+          el('profileTriviaAnsweredInput').value = selected.trivia_answered || 0;
+          el('profileBuzzesInput').value = selected.buzzes || 0;
+          el('profileStealsInput').value = selected.steal_wins || 0;
+          el('profileTournamentWinsInput').value = selected.tournament_wins || 0;
+          el('profileTotalPointsInput').value = selected.total_points || 0;
+        };
+
+        const loadSelectedCustomPack = () => {
+          const packs = ((latestState && latestState.trivia && latestState.trivia.custom_packs) || []);
+          const selectedSlug = el('customTriviaPackSelect').value;
+          if (!selectedSlug) {
+            el('customTriviaPackNameInput').value = '';
+            el('customTriviaPackSlugInput').value = '';
+            el('customTriviaPackDescriptionInput').value = '';
+            el('customTriviaQuestionsInput').value = '[]';
+            return;
+          }
+          const pack = packs.find((item) => item.slug === selectedSlug);
+          if (!pack) return;
+          el('customTriviaPackNameInput').value = pack.name || '';
+          el('customTriviaPackSlugInput').value = pack.slug || '';
+          el('customTriviaPackDescriptionInput').value = pack.description || '';
+          el('customTriviaQuestionsInput').value = JSON.stringify(pack.questions || [], null, 2);
+        };
+
+        const renderManualEditor = () => {
+          const profiles = (latestState && latestState.profiles) || [];
+          el('profileSelect').innerHTML = profiles.length ? profiles.map((item) => `<option value="${item.name}">${item.name}</option>`).join('') : '<option value="">No profiles</option>';
+          loadSelectedProfile();
+          const tournament = (latestState && latestState.tournament) || {};
+          el('manualTournamentNameInput').value = tournament.name || 'House Tournament';
+          el('manualTournamentTargetInput').value = tournament.target_score || 10;
+          el('manualTournamentEnabledSelect').value = String(!!tournament.enabled);
+          const packs = ((latestState && latestState.trivia && latestState.trivia.custom_packs) || []);
+          el('customTriviaPackSelect').innerHTML = '<option value="">New pack</option>' + packs.map((item) => `<option value="${item.slug}">${item.name} (${item.question_count || (item.questions || []).length})</option>`).join('');
+          if (!el('customTriviaPackSelect').value) {
+            el('customTriviaQuestionsInput').value = el('customTriviaQuestionsInput').value || '[]';
+          }
+        };
+
+        window.renderManualEditor = renderManualEditor;
+        el('profileSelect').addEventListener('change', loadSelectedProfile);
+        el('customTriviaPackSelect').addEventListener('change', loadSelectedCustomPack);
+        el('saveProfileBtn').addEventListener('click', async () => {
+          try {
+            await hostAction('update_profile', {
+              player_name: el('profileSelect').value,
+              updates: {
+                games_played: parseInt(el('profileGamesPlayedInput').value || '0', 10),
+                card_round_wins: parseInt(el('profileCardWinsInput').value || '0', 10),
+                trivia_correct: parseInt(el('profileTriviaCorrectInput').value || '0', 10),
+                trivia_answered: parseInt(el('profileTriviaAnsweredInput').value || '0', 10),
+                buzzes: parseInt(el('profileBuzzesInput').value || '0', 10),
+                steal_wins: parseInt(el('profileStealsInput').value || '0', 10),
+                tournament_wins: parseInt(el('profileTournamentWinsInput').value || '0', 10),
+                total_points: parseInt(el('profileTotalPointsInput').value || '0', 10),
+              },
+            });
+            setNotice('manualEditorNotice', 'Profile saved.', 'success');
+          } catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('resetProfileBtn').addEventListener('click', async () => {
+          try { await hostAction('reset_profile', { player_name: el('profileSelect').value }); setNotice('manualEditorNotice', 'Profile reset.', 'success'); }
+          catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('deleteProfileBtn').addEventListener('click', async () => {
+          try { await hostAction('delete_profile', { player_name: el('profileSelect').value }); setNotice('manualEditorNotice', 'Profile deleted.', 'success'); }
+          catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('saveTournamentEditorBtn').addEventListener('click', async () => {
+          try {
+            await hostAction('update_tournament_settings', {
+              name: el('manualTournamentNameInput').value,
+              target_score: parseInt(el('manualTournamentTargetInput').value || '10', 10),
+              enabled: el('manualTournamentEnabledSelect').value === 'true',
+            });
+            setNotice('manualEditorNotice', 'Tournament settings saved.', 'success');
+          } catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('clearTournamentHistoryBtn').addEventListener('click', async () => {
+          try { await hostAction('clear_tournament_history'); setNotice('manualEditorNotice', 'Tournament history cleared.', 'success'); }
+          catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('saveCustomTriviaPackBtn').addEventListener('click', async () => {
+          try {
+            const questions = JSON.parse(el('customTriviaQuestionsInput').value || '[]');
+            await hostAction('save_custom_trivia_pack', {
+              slug: el('customTriviaPackSlugInput').value,
+              name: el('customTriviaPackNameInput').value,
+              description: el('customTriviaPackDescriptionInput').value,
+              questions,
+            });
+            setNotice('manualEditorNotice', 'Custom trivia pack saved.', 'success');
+          } catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('deleteCustomTriviaPackBtn').addEventListener('click', async () => {
+          try { await hostAction('delete_custom_trivia_pack', { slug: el('customTriviaPackSlugInput').value || el('customTriviaPackSelect').value }); setNotice('manualEditorNotice', 'Custom trivia pack deleted.', 'success'); }
+          catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+      }
+
       ensureExtraHostTools(); if (window.renderAiModerationQueue) window.renderAiModerationQueue();
+      ensureManualHostEditor(); if (window.renderManualEditor) window.renderManualEditor();
       applyModeLayout();
       bootstrapHost().catch(() => {});
       fetchState();
