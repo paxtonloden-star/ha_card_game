@@ -373,3 +373,39 @@ Good next additions from here would be:
 ## Disclaimer
 
 This project is intended for private/home use and custom Home Assistant setups. Review the content of decks and AI-generated material before using it with children or mixed-age groups.
+
+
+## Newly added advanced features
+
+### Persistent player profiles
+- Tracks per-player card round wins, trivia accuracy, buzzes, steal wins, total points, and tournament wins.
+- Profiles persist in Home Assistant storage across restarts.
+
+### Scene and media integration
+- Optional host-controlled scene/media automation hooks for game start, reveal, and winner events.
+- Supports scene entities plus media-player sound cues for winner moments and room ambiance.
+
+### Tournament mode
+- Start a named tournament with a target score.
+- Keeps a rolling history of rounds and automatically crowns a champion when the target score is reached.
+- Can be used for cards mode or trivia mode.
+
+### Offline curated trivia packs
+- Built-in offline trivia question packs for:
+  - history
+  - fun facts
+  - geography
+  - movies
+  - 1990s
+  - 2000s
+  - 2010s
+  - computer games
+- Works without an AI API key.
+- Still supports age-range and difficulty tuning.
+
+### Host actions added
+- `set_scene_media_config`
+- `trigger_scene_media_event`
+- `start_tournament`
+- `end_tournament`
+- `prepare_trivia` now supports `source: offline_curated`
