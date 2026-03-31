@@ -446,3 +446,56 @@ This repo is now closer to a production-style Home Assistant custom integration,
 - place remote access behind secure Home Assistant remote access or a VPN instead of exposing raw public endpoints
 
 These recommendations align with Home Assistant's current integration quality guidance around options flows, diagnostics, repair flows, and runtime data.
+
+
+## Production-ready configuration upgrades
+
+This build now includes a more complete Home Assistant integration surface:
+
+- multi-step **Options Flow** with selector-based inputs
+- support for storing an **AI API key** in integration options
+- optional **remote base URL override** for invite links
+- richer **Diagnostics** output with redacted runtime state
+- **Repair Issues** for missing remote URL, invalid AI setup, and empty trivia category selections
+- **System Health** reporting for decks, players, websocket clients, and AI state
+
+### Options Flow
+
+Open the integration in Home Assistant and choose **Configure**. The flow now has separate sections for:
+
+- General
+- Content and safety
+- Remote access
+- AI
+- Trivia
+
+### Diagnostics
+
+Diagnostics now include:
+
+- sanitized entry data and options
+- runtime state summary
+- scene/media summary
+- tournament summary
+- storage snapshot metadata
+
+Secrets such as API keys, tokens, join codes, and remote invite payloads are redacted.
+
+### Repairs
+
+The integration can now raise repair issues when:
+
+- remote players are enabled without a usable external URL
+- AI generation is enabled without an API key and without fallback
+- no trivia categories are enabled
+
+### System Health
+
+System health exposes high-level operational signals such as:
+
+- whether the integration is loaded
+- number of players
+- deck counts
+- custom trivia pack counts
+- websocket client count
+- AI enabled state
