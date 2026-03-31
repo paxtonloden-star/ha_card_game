@@ -409,3 +409,40 @@ This project is intended for private/home use and custom Home Assistant setups. 
 - `start_tournament`
 - `end_tournament`
 - `prepare_trivia` now supports `source: offline_curated`
+
+
+## Manual host editor
+
+The host panel now includes a **Manual host editor** for operational cleanup and production-minded administration:
+- edit or reset persistent player profile stats
+- update tournament name, target score, and enabled state
+- clear tournament history without wiping the whole lobby
+- create, edit, and delete **custom offline trivia packs** from the UI using JSON questions
+
+Example question JSON:
+
+```json
+[
+  {
+    "question": "Which planet is known as the Red Planet?",
+    "correct_answer": "Mars",
+    "choices": ["Venus", "Mars", "Jupiter", "Mercury"],
+    "accepted_answers": ["Mars"],
+    "difficulty": "easy",
+    "age_range": "9_12",
+    "explanation": "Mars is often called the Red Planet because of iron oxide on its surface."
+  }
+]
+```
+
+## Production hardening roadmap
+
+This repo is now closer to a production-style Home Assistant custom integration, but I still recommend the following before calling it production-ready:
+- move more host settings into a true **options flow**
+- add **diagnostics** output for support bundles
+- add **repair issues** for invalid AI/remote/trivia configuration
+- use config-entry **runtime data** consistently for live coordinator/runtime objects
+- add broader automated tests for config flow, API auth edges, and storage migrations
+- place remote access behind secure Home Assistant remote access or a VPN instead of exposing raw public endpoints
+
+These recommendations align with Home Assistant's current integration quality guidance around options flows, diagnostics, repair flows, and runtime data.
