@@ -1,0 +1,27 @@
+language: "en"
+intents:
+  HACardGameJoin:
+    data:
+      - sentences:
+          - "join the card game as {player_name}"
+          - "add {player_name} to the card game"
+  HACardGameSubmit:
+    data:
+      - sentences:
+          - "submit {card_text} for {player_name}"
+          - "submit card [number] {hand_index} for {player_name}"
+  HACardGamePickWinner:
+    data:
+      - sentences:
+          - "pick submission {submission_number} as the winner"
+          - "submission {submission_number} wins"
+  HACardGameNextRound:
+    data:
+      - sentences:
+          - "start the next card game round"
+          - "next card game round"
+  HACardGameStart:
+    data:
+      - sentences:
+          - "start the card game"
+          - "start the card game with {deck_name}"
