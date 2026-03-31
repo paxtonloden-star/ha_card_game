@@ -1,43 +1,155 @@
-# HA Card Game Starter
+# HA Card Game
 
-A Home Assistant custom integration starter for a judge-based party card game.
+HA Card Game is a custom Home Assistant integration that turns Home Assistant into a party-game host for two game styles:
 
-## Included in this version
+- **Judge-based card play** inspired by fill-in-the-blank party card games
+- **Multiplayer trivia** with phone-based answers, team mode, buzzer mode, and steal-chance rounds
 
-- custom integration scaffold
-- persistent in-memory game engine
-- live browser UI for host and players
-- QR join flow for phones on the same network
+It is built to feel like a living-room game system inside Home Assistant: the host runs the game from the HA sidebar, players join from their phones with a QR code or link, and a TV or wall tablet can show a full-screen host display for prompts, reveals, scores, and trivia results.
+
+## What this project includes
+
+### Card game features
+- live player and host browser UI
+- QR join flow and join codes
+- white-card hands with refill each round
+- anonymous judge view and winner selection
+- TV mode with reveal sequences and winner overlays
+- configurable reveal sounds, flip styles, tick sound packs, and theme presets
+- custom preset manager with import/export
+- deck pack manager with import/export
+- AI-generated deck packs
+- AI expansion of existing decks
+- AI moderation queue with approve/reject flow
+- parental content controls for AI, trivia, and remote access
+
+### Trivia features
+- trivia mode with multiple-choice answers on phones
+- categories including:
+  - history
+  - fun facts
+  - geography
+  - movies
+  - 1990s
+  - 2000s
+  - 2010s
+  - computer games
+- age-range tuning and AI-generated trivia questions
+- multiplayer grading and TV reveal flow
+- team-vs-team mode
+- fastest-answer buzzer mode
+- wrong-answer steal chance
+
+### Home Assistant integration features
+- config flow for setup
+- sidebar panel
+- sensors and buttons
+- Home Assistant services for game control
+- Assist intent scaffolding and starter custom sentences
 - websocket push for live room updates
-- deck pack manager with built-in and file-based JSON decks
-- Assist intent handlers and starter custom sentences
-- HACS metadata and example package YAML
+- HACS-friendly repo layout
 
-## New in 0.3.0
+## Current status
 
-- removed 2-second polling from the player UI in favor of a websocket feed
-- added white-card hands with refill per round
-- added deck loading from `/config/ha_card_game_decks/*.json`
-- added built-in `default_family` and `smart_home_chaos` decks
-- added Assist intents for join, start, submit, pick winner, and next round
+This repo is a **starter implementation and MVP**. It already has a lot of working gameplay scaffolding, but you should still treat it like an actively evolving custom integration rather than a polished App Store-style package.
 
-## Live UI flow
+Especially important:
+- the game is best suited for **trusted home use**
+- remote play should be done through **secure Home Assistant remote access**, not by exposing raw endpoints directly to the internet
+- AI generation includes a **local fallback generator** so demos and tests still work without a live API key
 
-1. Install the custom component.
-2. Open the **Card Game** sidebar panel.
-3. Players scan the QR code or open the join URL.
-4. Once at least 3 players have joined, call `ha_card_game.start_game`.
-5. Players submit answers from their phones using a hand of white cards.
-6. The current judge picks the winner from their phone.
-7. Call `ha_card_game.next_round` or say “next card game round” to continue.
+## Repository layout
 
-## Deck pack format
+```text
+custom_components/ha_card_game/
+  __init__.py
+  manifest.json
+  config_flow.py
+  coordinator.py
+  game_engine.py
+  deck_manager.py
+  trivia_manager.py
+  ai_generator.py
+  api.py
+  panel.py
+  sensor.py
+  button.py
+  intent.py
+  frontend/
+docs/
+examples/
+tests/
+```
 
-Save JSON files in:
+## Requirements
 
-- `/config/ha_card_game_decks/*.json`
+- Home Assistant with support for custom integrations
+- A modern browser for host/player/TV screens
+- Optional: a secure remote-access method such as Home Assistant Cloud, VPN, or Tailscale for remote players
+- Optional: an OpenAI-compatible API endpoint if you want live AI generation instead of the built-in local fallback
 
-Example:
+## Install
+
+### Option 1: HACS-style install
+
+1. Copy this repo into a Git repository you control.
+2. Add that repository to HACS as a custom repository.
+3. Install **HA Card Game** from HACS.
+4. Restart Home Assistant.
+
+### Option 2: Manual install
+
+1. Copy the folder below into your Home Assistant config directory:
+
+   ```text
+   custom_components/ha_card_game
+   ```
+
+2. Your Home Assistant config should end up looking like:
+
+   ```text
+   /config/custom_components/ha_card_game/
+   ```
+
+3. Restart Home Assistant.
+
+## Initial setup
+
+1. In Home Assistant, go to **Settings → Devices & Services**.
+2. Click **Add Integration**.
+3. Search for **HA Card Game**.
+4. Complete the config flow.
+5. Open the new **Card Game** item in the Home Assistant sidebar.
+
+## Basic setup flow
+
+### For card game mode
+1. Open the sidebar panel.
+2. Use the host/admin controls to confirm the active deck.
+3. Let players join by QR code, join link, or invite link.
+4. Start the game.
+5. Players submit cards from their phones.
+6. The judge picks a winner.
+7. Advance to the next round.
+
+### For trivia mode
+1. Open the sidebar panel.
+2. Switch or prepare the session for trivia.
+3. Choose category, age range, and question count.
+4. Optionally enable team mode, buzzer mode, and steal chance.
+5. Start trivia.
+6. Players answer from their phones.
+7. The TV screen reveals correct answers, team standings, and round outcomes.
+
+## Deck setup
+
+Deck JSON files can be stored in:
+
+```text
+/config/ha_card_game_decks/*.json
+```
+
+Example deck:
 
 ```json
 {
@@ -46,23 +158,218 @@ Example:
   "description": "Work-safe office deck",
   "allow_free_text": false,
   "hand_size": 7,
-  "prompts": ["Quarterly planning was ruined by ____."],
-  "white_cards": ["reply-all", "a broken spreadsheet", "free pizza"]
+  "prompts": [
+    "Quarterly planning was ruined by ____."
+  ],
+  "white_cards": [
+    "reply-all",
+    "a broken spreadsheet",
+    "free pizza"
+  ]
 }
 ```
 
-Then call `ha_card_game.reload_decks`.
+After adding or changing deck files, reload decks from the host panel or call the reload service.
+
+## AI generation
+
+The integration includes two AI generation paths:
+
+- **remote AI generation** through an OpenAI-compatible endpoint
+- **local fallback generation** for offline demos, tests, or when no API key is configured
+
+AI generation can be used for:
+- creating brand-new deck packs
+- adding new AI-created cards into an existing deck
+- generating trivia questions by category, age range, and difficulty profile
+
+When parental controls are enabled, AI output can be filtered and routed into a host approval queue before it becomes playable.
+
+### Recommended AI setup
+
+If you want live AI-backed content, configure:
+- API key
+- endpoint URL
+- model name
+
+If you do not configure those, the integration can still generate starter-style local content.
+
+## Parental controls and AI moderation
+
+The host panel includes a parental-controls section for:
+- enabling or disabling parental safeguards
+- choosing a content mode: `family_safe`, `teen`, or `adult`
+- requiring AI approval before new packs or trivia are used
+- allowing or blocking remote players
+- limiting which trivia categories are allowed
+
+When **AI approval** is enabled:
+1. AI-generated decks and trivia go into a moderation queue.
+2. The host reviews each queued item.
+3. The host approves or rejects it from the sidebar panel.
+
+Family-safe mode also applies a lightweight blocked-term filter to generated prompts, white cards, and trivia text before the review step.
+
+## Remote player setup
+
+For remote players, use one of these approaches:
+
+- Home Assistant Cloud remote URL
+- VPN access to your home network
+- Tailscale or similar private networking
+
+Recommended approach:
+1. Make sure your Home Assistant instance already has secure remote access.
+2. Open the host panel.
+3. Generate or copy the player invite link.
+4. Send the invite link to the remote player.
+
+Do **not** expose custom endpoints directly to the internet without a secure access layer.
+
+## TV mode
+
+TV mode is designed for a large display in the room.
+
+It can show:
+- prompt text
+- join code and QR code
+- live scoreboard
+- player list
+- trivia question and choices
+- buzzer owner
+- reveal animations
+- winner and answer overlays
+
+TV mode works best on:
+- a wall tablet
+- a browser on a smart TV
+- a mini PC or streaming box browser
+
+## Theme presets and custom presets
+
+Built-in theme presets bundle reveal settings together, including:
+- reveal sound
+- flip style
+- tick sound pack
+- auto-advance behavior
+- submission reveal timing
+- TV theme visuals
+
+Custom presets can be:
+- saved from the current host settings
+- updated
+- deleted
+- exported
+- imported into another Home Assistant instance
+
+## Deck pack import/export
+
+Deck packs can also be exported and imported so you can move custom game content between Home Assistant instances.
+
+## Services
+
+The integration exposes service actions including:
+- `ha_card_game.start_game`
+- `ha_card_game.add_player`
+- `ha_card_game.submit_card`
+- `ha_card_game.pick_winner`
+- `ha_card_game.next_round`
+- `ha_card_game.reset_game`
+- `ha_card_game.set_deck`
+- `ha_card_game.reload_decks`
+
+See `custom_components/ha_card_game/services.yaml` for field details.
 
 ## Assist examples
 
+Example phrases included in the starter scaffolding:
 - “join the card game as Brian”
 - “start the card game with smart home chaos”
 - “submit card 2 for Brian”
 - “submission 3 wins”
 - “next card game round”
 
-## Important notes
+## Example package
 
-- The public player endpoints are still designed for trusted home/LAN use.
-- The websocket feed is intentionally simple and broadcasts room state changes.
-- Built-in decks are family-safe starters so you can wire up mechanics first.
+There is an example helper/package file here:
+
+```text
+examples/package.yaml
+```
+
+Use it as a starting point if you want extra dashboard helpers or package-based organization.
+
+## Development notes
+
+- `segno` is used for QR generation
+- websocket updates are used for live room state changes
+- tests are included for engine, deck manager, AI/trivia flow, and buzzer/steal logic
+
+## Suggested next features
+
+Good next additions from here would be:
+
+1. **Parental content controls**
+   - deck-level family filters
+   - per-room safe mode
+   - allow/block categories by player age
+
+2. **Player profiles and progression**
+   - persistent stats by player
+   - streaks, badges, funniest-answer awards
+   - seasonal leaderboards
+
+3. **Scheduled game nights**
+   - create a Home Assistant calendar event
+   - auto-open TV mode scene
+   - reminders and countdown announcements
+
+4. **Media and device integration**
+   - winner lights/scenes
+   - sound effects through media players
+   - button or NFC tap-to-buzz support
+
+5. **Question review and moderation**
+   - approve AI-generated cards before they enter a live deck
+   - ban or retire weak cards
+   - favorite and replay top submissions
+
+6. **Trivia content packs**
+   - curated offline packs by grade band
+   - holiday packs
+   - local/family history packs
+   - household custom knowledge packs
+
+7. **Tournament mode**
+   - bracket play
+   - team seasons
+   - cumulative party-night ranking
+
+8. **Companion automations**
+   - award chore points to winners
+   - unlock bonus rewards
+   - turn game outcomes into Home Assistant achievements or badges
+
+## Troubleshooting
+
+### Sidebar panel does not appear
+- restart Home Assistant after copying the integration
+- confirm the integration loaded successfully
+- confirm panel support is enabled in the integration setup
+
+### Players cannot join
+- verify the player device can reach your Home Assistant URL
+- check whether you are using a local-only URL while the player is remote
+- confirm your secure remote access path is working first
+
+### AI generation is not using live AI
+- verify the API key, endpoint, and model settings
+- if those are not configured, local fallback generation may still make it look like generation is working
+
+### Deck changes are not showing
+- reload decks from the host controls or call `ha_card_game.reload_decks`
+- verify the JSON file is valid and stored under `/config/ha_card_game_decks/`
+
+## Disclaimer
+
+This project is intended for private/home use and custom Home Assistant setups. Review the content of decks and AI-generated material before using it with children or mixed-age groups.
