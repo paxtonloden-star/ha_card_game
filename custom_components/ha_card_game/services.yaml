@@ -1,0 +1,62 @@
+start_game:
+  name: Start game
+  description: Start a new game.
+  fields:
+    deck_name:
+      required: false
+      example: default_family
+      selector:
+        text:
+
+add_player:
+  name: Add player
+  description: Add a player to the lobby.
+  fields:
+    player_name:
+      required: true
+      example: Brian
+      selector:
+        text:
+
+submit_card:
+  name: Submit card
+  description: Submit a card for the current round.
+  fields:
+    player_name:
+      required: true
+      selector:
+        text:
+    card_text:
+      required: true
+      selector:
+        text:
+
+pick_winner:
+  name: Pick winner
+  description: Select the winning player for the round.
+  fields:
+    player_name:
+      required: true
+      selector:
+        text:
+
+next_round:
+  name: Next round
+  description: Advance to the next round.
+
+reset_game:
+  name: Reset game
+  description: Reset the game back to the lobby state.
+
+set_deck:
+  name: Set deck
+  description: Set the active deck for the next game.
+  fields:
+    deck_name:
+      required: true
+      selector:
+        text:
+
+reload_decks:
+  name: Reload decks
+  description: Reload deck JSON files from the Home Assistant config directory.

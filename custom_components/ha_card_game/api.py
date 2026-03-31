@@ -1,0 +1,384 @@
+"""API views for HA Card Game live player and host UI."""
+
+from __future__ import annotations
+
+from io import BytesIO
+
+import segno
+from aiohttp import web
+from homeassistant.components.http import HomeAssistantView
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.network import get_url
+
+from .const import DOMAIN, WS_EVENT_ERROR
+from .coordinator import CardGameCoordinator
+
+
+async def async_register_api(hass: HomeAssistant, coordinator: CardGameCoordinator) -> None:
+    """Register API views."""
+    try:
+        coordinator.base_url = get_url(hass)
+    except Exception:  # pragma: no cover - fallback if URL not configured
+        coordinator.base_url = ""
+
+    hass.http.register_view(CardGameStateView(coordinator))
+    hass.http.register_view(CardGameJoinView(coordinator))
+    hass.http.register_view(CardGameSubmitView(coordinator))
+    hass.http.register_view(CardGameBuzzView(coordinator))
+    hass.http.register_view(CardGamePickWinnerView(coordinator))
+    hass.http.register_view(CardGameJoinQrView(coordinator))
+    hass.http.register_view(CardGameWebSocketView(coordinator))
+    hass.http.register_view(CardGameHostBootstrapView(coordinator))
+    hass.http.register_view(CardGameHostActionView(coordinator))
+    hass.http.register_view(CardGameHostPresetExportView(coordinator))
+    hass.http.register_view(CardGameHostDeckExportView(coordinator))
+
+
+class BaseCardGameView(HomeAssistantView):
+    """Base view for public card game endpoints."""
+
+    requires_auth = False
+
+    def __init__(self, coordinator: CardGameCoordinator) -> None:
+        self.coordinator = coordinator
+
+    def json_error(self, message: str, status: int = 400) -> web.Response:
+        return self.json({"ok": False, "error": message}, status_code=status)
+
+
+class BaseCardGameHostView(BaseCardGameView):
+    """Base view for authenticated host-only endpoints."""
+
+    requires_auth = True
+
+
+class CardGameStateView(BaseCardGameView):
+    url = f"/api/{DOMAIN}/state"
+    name = f"api:{DOMAIN}:state"
+
+    async def get(self, request: web.Request) -> web.Response:
+        token = request.query.get("token")
+        return self.json({"ok": True, "state": self.coordinator.player_state(token)})
+
+
+class CardGameJoinView(BaseCardGameView):
+    url = f"/api/{DOMAIN}/join"
+    name = f"api:{DOMAIN}:join"
+
+    async def post(self, request: web.Request) -> web.Response:
+        data = await request.json()
+        join_code = str(data.get("join_code", "")).strip().upper()
+        if join_code != self.coordinator.join_code:
+            return self.json_error("Invalid join code", 403)
+
+        player_name = str(data.get("player_name", "")).strip()
+        if not player_name:
+            return self.json_error("Player name is required")
+
+        try:
+            joined = await self.coordinator.async_join_player(player_name)
+        except ValueError as err:
+            return self.json_error(str(err))
+
+        return self.json({"ok": True, **joined})
+
+
+class CardGameSubmitView(BaseCardGameView):
+    url = f"/api/{DOMAIN}/submit"
+    name = f"api:{DOMAIN}:submit"
+
+    async def post(self, request: web.Request) -> web.Response:
+        data = await request.json()
+        token = str(data.get("session_token", ""))
+        card_text = str(data.get("card_text", ""))
+        try:
+            await self.coordinator.async_submit_for_token(token, card_text)
+        except ValueError as err:
+            return self.json_error(str(err))
+        return self.json({"ok": True})
+
+
+
+
+class CardGameBuzzView(BaseCardGameView):
+    url = f"/api/{DOMAIN}/buzz"
+    name = f"api:{DOMAIN}:buzz"
+
+    async def post(self, request: web.Request) -> web.Response:
+        data = await request.json()
+        token = str(data.get("session_token", ""))
+        try:
+            result = await self.coordinator.async_buzz_for_token(token)
+        except ValueError as err:
+            return self.json_error(str(err))
+        return self.json({"ok": True, **result})
+
+
+class CardGamePickWinnerView(BaseCardGameView):
+    url = f"/api/{DOMAIN}/pick_winner"
+    name = f"api:{DOMAIN}:pick_winner"
+
+    async def post(self, request: web.Request) -> web.Response:
+        data = await request.json()
+        token = str(data.get("session_token", ""))
+        submission_id = str(data.get("submission_id", ""))
+        try:
+            await self.coordinator.async_pick_submission_for_token(token, submission_id)
+        except ValueError as err:
+            return self.json_error(str(err))
+        return self.json({"ok": True})
+
+
+class CardGameJoinQrView(BaseCardGameView):
+    url = f"/api/{DOMAIN}/join_qr.svg"
+    name = f"api:{DOMAIN}:join_qr"
+
+    async def get(self, request: web.Request) -> web.StreamResponse:
+        qr = segno.make(self.coordinator.join_url)
+        buffer = BytesIO()
+        qr.save(buffer, kind="svg", scale=6, border=2)
+        return web.Response(body=buffer.getvalue(), content_type="image/svg+xml")
+
+
+class CardGameWebSocketView(BaseCardGameView):
+    url = f"/api/{DOMAIN}/ws"
+    name = f"api:{DOMAIN}:ws"
+
+    async def get(self, request: web.Request) -> web.StreamResponse:
+        ws = web.WebSocketResponse(heartbeat=30)
+        await ws.prepare(request)
+        await self.coordinator.async_register_socket(ws)
+
+        try:
+            async for msg in ws:
+                if msg.type == web.WSMsgType.TEXT:
+                    if msg.data == "ping":
+                        await ws.send_json({"event": "pong"})
+                    else:
+                        await ws.send_json({"event": WS_EVENT_ERROR, "error": "Unsupported websocket command"})
+                elif msg.type == web.WSMsgType.ERROR:
+                    break
+        finally:
+            await self.coordinator.async_unregister_socket(ws)
+
+        return ws
+
+
+class CardGameHostBootstrapView(BaseCardGameHostView):
+    url = f"/api/{DOMAIN}/host/bootstrap"
+    name = f"api:{DOMAIN}:host_bootstrap"
+
+    async def get(self, request: web.Request) -> web.Response:
+        return self.json({
+            "ok": True,
+            "state": self.coordinator.player_state(None),
+            "host": {
+                "can_manage": True,
+                "available_actions": [
+                    "start_game",
+                    "next_round",
+                    "reset_game",
+                    "set_deck",
+                    "reload_decks",
+                    "remove_player",
+                    "set_round_timer",
+                    "clear_round_timer",
+                    "set_reveal_config",
+                    "save_custom_theme_preset",
+                    "delete_custom_theme_preset",
+                    "import_theme_presets",
+                    "export_theme_presets",
+                    "import_deck_packs",
+                    "export_deck_packs",
+                    "set_ai_settings",
+                    "set_parental_controls",
+                    "approve_ai_queue_item",
+                    "reject_ai_queue_item",
+                    "generate_ai_deck",
+                    "extend_deck_with_ai",
+                    "prepare_trivia",
+                    "start_trivia_round",
+                    "grade_trivia_round",
+                    "set_trivia_settings",
+                    "assign_player_team",
+                    "create_remote_invite",
+                    "buzz_player",
+                ],
+                "reveal": {
+                    "sound_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("sound_options", [])),
+                    "flip_style_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("flip_style_options", [])),
+                    "tick_sound_pack_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("tick_sound_pack_options", [])),
+                    "theme_preset_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("theme_preset_options", [])),
+                    "custom_theme_presets": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("custom_theme_presets", [])),
+                    "import_modes": ["merge", "replace"],
+                    "export_url": f"/api/{DOMAIN}/host/presets/export",
+                },
+                "decks": {
+                    "import_modes": ["merge", "replace"],
+                    "export_url": f"/api/{DOMAIN}/host/decks/export",
+                },
+                "ai": {"settings": self.coordinator.ai_generator.settings.as_dict()},
+                "trivia": {"categories": ["history","fun_facts","geography","movies","1990s","2000s","2010s","computer_games"], "age_ranges": ["6_8","9_12","13_17","18_plus"], "teams": ["Solo", "Team A", "Team B"], "buzzer_modes": [False, True]},
+            },
+        })
+
+
+class CardGameHostActionView(BaseCardGameHostView):
+    url = f"/api/{DOMAIN}/host/action"
+    name = f"api:{DOMAIN}:host_action"
+
+    async def post(self, request: web.Request) -> web.Response:
+        data = await request.json()
+        action = str(data.get("action", "")).strip()
+
+        try:
+            if action == "start_game":
+                await self.coordinator.async_start_game(data.get("deck_name"), game_mode=str(data.get("game_mode", "cards")))
+            elif action == "next_round":
+                self.coordinator.engine.next_round()
+                await self.coordinator.async_refresh_from_engine()
+            elif action == "reset_game":
+                await self.coordinator.async_reset_lobby()
+            elif action == "set_deck":
+                await self.coordinator.async_set_deck(str(data.get("deck_name", "")).strip())
+            elif action == "reload_decks":
+                await self.coordinator.async_reload_decks()
+            elif action == "remove_player":
+                await self.coordinator.async_remove_player(str(data.get("player_name", "")).strip())
+            elif action == "set_round_timer":
+                await self.coordinator.async_set_round_timer(int(data.get("seconds", 0)))
+            elif action == "clear_round_timer":
+                await self.coordinator.async_set_round_timer(0)
+            elif action == "set_reveal_config":
+                await self.coordinator.async_set_reveal_config(
+                    duration_ms=int(data["duration_ms"]) if data.get("duration_ms") is not None else None,
+                    sound=str(data.get("sound")).strip() if data.get("sound") is not None else None,
+                    auto_advance_enabled=bool(data.get("auto_advance_enabled")) if data.get("auto_advance_enabled") is not None else None,
+                    auto_advance_seconds=int(data["auto_advance_seconds"]) if data.get("auto_advance_seconds") is not None else None,
+                    submission_reveal_enabled=bool(data.get("submission_reveal_enabled")) if data.get("submission_reveal_enabled") is not None else None,
+                    submission_reveal_step_ms=int(data["submission_reveal_step_ms"]) if data.get("submission_reveal_step_ms") is not None else None,
+                    flip_style=str(data.get("flip_style")).strip() if data.get("flip_style") is not None else None,
+                    tick_sound_pack=str(data.get("tick_sound_pack")).strip() if data.get("tick_sound_pack") is not None else None,
+                    theme_preset=str(data.get("theme_preset")).strip() if data.get("theme_preset") is not None else None,
+                )
+            elif action == "save_custom_theme_preset":
+                await self.coordinator.async_save_custom_theme_preset(
+                    str(data.get("name", "")).strip(),
+                    str(data.get("description", "")).strip(),
+                )
+            elif action == "delete_custom_theme_preset":
+                await self.coordinator.async_delete_custom_theme_preset(str(data.get("preset_slug", "")).strip())
+            elif action == "import_theme_presets":
+                payload = data.get("payload")
+                if not isinstance(payload, dict):
+                    return self.json_error("Import payload must be a JSON object")
+                await self.coordinator.async_import_theme_presets(payload, mode=str(data.get("import_mode", "merge")).strip() or "merge")
+            elif action == "import_deck_packs":
+                payload = data.get("payload")
+                if not isinstance(payload, dict):
+                    return self.json_error("Import payload must be a JSON object")
+                await self.coordinator.async_import_decks(payload, mode=str(data.get("import_mode", "merge")).strip() or "merge")
+            elif action == "set_ai_settings":
+                await self.coordinator.async_set_ai_settings(
+                    enabled=bool(data.get("enabled")) if data.get("enabled") is not None else None,
+                    endpoint=str(data.get("endpoint")).strip() if data.get("endpoint") is not None else None,
+                    model=str(data.get("model")).strip() if data.get("model") is not None else None,
+                    api_key=str(data.get("api_key")).strip() if data.get("api_key") is not None else None,
+                    use_local_fallback=bool(data.get("use_local_fallback")) if data.get("use_local_fallback") is not None else None,
+                )
+            elif action == "set_parental_controls":
+                categories = data.get("allowed_trivia_categories")
+                await self.coordinator.async_set_parental_controls(
+                    enabled=bool(data.get("enabled")) if data.get("enabled") is not None else None,
+                    content_mode=str(data.get("content_mode")).strip() if data.get("content_mode") is not None else None,
+                    require_ai_approval=bool(data.get("require_ai_approval")) if data.get("require_ai_approval") is not None else None,
+                    allow_remote_players=bool(data.get("allow_remote_players")) if data.get("allow_remote_players") is not None else None,
+                    allowed_trivia_categories=list(categories) if isinstance(categories, list) else None,
+                )
+            elif action == "approve_ai_queue_item":
+                result = await self.coordinator.async_approve_ai_queue_item(str(data.get("item_id", "")).strip())
+                return self.json({"ok": True, "state": self.coordinator.player_state(None), "result": result})
+            elif action == "reject_ai_queue_item":
+                await self.coordinator.async_reject_ai_queue_item(str(data.get("item_id", "")).strip())
+            elif action == "generate_ai_deck":
+                deck_info = await self.coordinator.async_generate_ai_deck(
+                    theme=str(data.get("theme", "Custom AI Pack")).strip(),
+                    prompt_count=int(data.get("prompt_count", 12)),
+                    white_count=int(data.get("white_count", 40)),
+                    age_range=str(data.get("age_range", "18_plus")).strip(),
+                    family_friendly=bool(data.get("family_friendly", True)),
+                )
+                return self.json({"ok": True, "state": self.coordinator.player_state(None), "deck": deck_info})
+            elif action == "extend_deck_with_ai":
+                deck_info = await self.coordinator.async_generate_ai_deck(
+                    theme=str(data.get("theme", "Deck Expansion")).strip(),
+                    prompt_count=int(data.get("prompt_count", 6)),
+                    white_count=int(data.get("white_count", 20)),
+                    age_range=str(data.get("age_range", "18_plus")).strip(),
+                    family_friendly=bool(data.get("family_friendly", True)),
+                    merge_into_slug=str(data.get("deck_name", "")).strip() or None,
+                )
+                return self.json({"ok": True, "state": self.coordinator.player_state(None), "deck": deck_info})
+            elif action == "prepare_trivia":
+                await self.coordinator.async_prepare_trivia(
+                    category=str(data.get("category", "fun_facts")).strip(),
+                    age_range=str(data.get("age_range", "18_plus")).strip(),
+                    difficulty=str(data.get("difficulty")).strip() if data.get("difficulty") else None,
+                    question_count=int(data.get("question_count", 10)),
+                )
+            elif action == "start_trivia_round":
+                await self.coordinator.async_start_trivia_round()
+            elif action == "grade_trivia_round":
+                result = await self.coordinator.async_grade_trivia_round()
+                return self.json({"ok": True, "state": self.coordinator.player_state(None), "result": result})
+            elif action == "set_trivia_settings":
+                await self.coordinator.async_set_trivia_settings(
+                    team_mode=bool(data.get("team_mode")) if data.get("team_mode") is not None else None,
+                    buzzer_mode=bool(data.get("buzzer_mode")) if data.get("buzzer_mode") is not None else None,
+                    buzz_bonus=int(data.get("buzz_bonus")) if data.get("buzz_bonus") is not None else None,
+                    steal_enabled=bool(data.get("steal_enabled")) if data.get("steal_enabled") is not None else None,
+                )
+            elif action == "assign_player_team":
+                await self.coordinator.async_assign_player_team(
+                    str(data.get("player_name", "")).strip(),
+                    str(data.get("team_name", "")).strip(),
+                )
+            elif action == "create_remote_invite":
+                invite = await self.coordinator.async_create_remote_invite(str(data.get("player_name", "")).strip())
+                return self.json({"ok": True, "state": self.coordinator.player_state(None), "invite": invite})
+            else:
+                return self.json_error("Unknown host action", 404)
+        except ValueError as err:
+            return self.json_error(str(err))
+
+        return self.json({"ok": True, "state": self.coordinator.player_state(None)})
+
+
+class CardGameHostPresetExportView(BaseCardGameHostView):
+    url = f"/api/{DOMAIN}/host/presets/export"
+    name = f"api:{DOMAIN}:host_preset_export"
+
+    async def get(self, request: web.Request) -> web.Response:
+        include_builtin = str(request.query.get("include_builtin", "false")).lower() in {"1", "true", "yes", "on"}
+        payload = await self.coordinator.async_export_theme_presets(include_builtin=include_builtin)
+        return web.json_response(
+            payload,
+            headers={
+                "Content-Disposition": 'attachment; filename="ha_card_game_theme_presets.json"',
+            },
+        )
+
+
+class CardGameHostDeckExportView(BaseCardGameHostView):
+    url = f"/api/{DOMAIN}/host/decks/export"
+    name = f"api:{DOMAIN}:host_deck_export"
+
+    async def get(self, request: web.Request) -> web.Response:
+        include_builtin = str(request.query.get("include_builtin", "false")).lower() in {"1", "true", "yes", "on"}
+        payload = await self.coordinator.async_export_decks(include_builtin=include_builtin)
+        return web.json_response(
+            payload,
+            headers={
+                "Content-Disposition": 'attachment; filename="ha_card_game_deck_packs.json"',
+            },
+        )
