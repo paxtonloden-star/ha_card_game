@@ -499,3 +499,10 @@ System health exposes high-level operational signals such as:
 - custom trivia pack counts
 - websocket client count
 - AI enabled state
+
+
+## Data migrations and compatibility
+
+This integration now includes a storage migration layer for saved game state, AI moderation data, player profiles, custom trivia packs, remote invites, and reveal/theme settings. Older payload shapes are normalized on load and then re-saved in the current schema automatically.
+
+Compatibility handling currently covers legacy keys such as old theme fields, profile lists, trivia pack lists, parental control field names, remote invite lists, and earlier AI setting names. Diagnostics and system health now expose the active storage schema version and migration history to make upgrades easier to troubleshoot.
