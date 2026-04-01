@@ -90,6 +90,31 @@ class HACardGameConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(step_id="user", data_schema=_user_schema(user_input), errors=errors)
 
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Reconfigure the single existing config entry."""
+        entries = self.hass.config_entries.async_entries(DOMAIN)
+        if not entries:
+            return self.async_abort(reason="no_config_entry")
+
+        existing = entries[0]
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                normalized = _normalize_options(user_input, previous={**existing.data, **existing.options})
+            except vol.Invalid as err:
+                errors[err.path[0] if err.path else "base"] = str(err)
+            else:
+                self.hass.config_entries.async_update_entry(
+                    existing,
+                    data={**existing.data, **normalized},
+                    options={**existing.options},
+                )
+                await self.hass.config_entries.async_reload(existing.entry_id)
+                return self.async_abort(reason="reconfigure_successful")
+
+        defaults = {**existing.data, **existing.options}
+        return self.async_show_form(step_id="reconfigure", data_schema=_user_schema(defaults), errors=errors)
+
 
 class HACardGameOptionsFlow(config_entries.OptionsFlow):
     """Manage HA Card Game options."""

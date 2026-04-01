@@ -6,6 +6,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.exceptions import ConfigEntryError
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 
@@ -24,9 +25,8 @@ from .const import (
     SERVICE_SUBMIT_CARD,
 )
 from .coordinator import CardGameCoordinator
-from .intent import async_register_intents
 from .panel import async_register_panel
-from .repairs import async_sync_repairs
+from .repairs import ISSUE_DUPLICATE_ENTRIES, async_sync_repairs
 
 SERVICE_PLAYER_NAME = "player_name"
 SERVICE_CARD_TEXT = "card_text"
@@ -35,6 +35,13 @@ SERVICE_DECK_NAME = "deck_name"
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
+
+    domain_entries = hass.config_entries.async_entries(DOMAIN)
+    if len(domain_entries) > 1:
+        raise ConfigEntryError(
+            translation_domain=DOMAIN,
+            translation_key=ISSUE_DUPLICATE_ENTRIES,
+        )
 
     coordinator = CardGameCoordinator(hass)
     await coordinator.async_load()
@@ -48,7 +55,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await async_register_panel(hass)
 
     await async_register_api(hass, coordinator)
-    await async_register_intents(hass, coordinator)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await _async_register_services(hass, coordinator)
     await async_sync_repairs(hass, entry, coordinator)
@@ -59,6 +65,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        if not hass.data.get(DOMAIN):
+            hass.data.pop(DOMAIN, None)
         entry.runtime_data = None
     return unload_ok
 

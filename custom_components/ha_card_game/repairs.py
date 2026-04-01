@@ -13,9 +13,10 @@ from .const import DOMAIN, TRIVIA_CATEGORIES
 ISSUE_REMOTE_BASE_URL = "remote_players_without_base_url"
 ISSUE_AI_KEY = "ai_enabled_without_key_or_fallback"
 ISSUE_NO_TRIVIA_CATEGORIES = "no_trivia_categories_enabled"
+ISSUE_DUPLICATE_ENTRIES = "duplicate_entries"
 
 
-def compute_repair_issues(options: dict[str, Any], *, base_url: str, ai_settings: dict[str, Any]) -> set[str]:
+def compute_repair_issues(options: dict[str, Any], *, base_url: str, ai_settings: dict[str, Any], duplicate_entries: bool = False) -> set[str]:
     """Return repair issue ids that should be active."""
     issues: set[str] = set()
 
@@ -32,6 +33,9 @@ def compute_repair_issues(options: dict[str, Any], *, base_url: str, ai_settings
     if not [category for category in categories if category in TRIVIA_CATEGORIES]:
         issues.add(ISSUE_NO_TRIVIA_CATEGORIES)
 
+    if duplicate_entries:
+        issues.add(ISSUE_DUPLICATE_ENTRIES)
+
     return issues
 
 
@@ -41,6 +45,7 @@ async def async_sync_repairs(hass: HomeAssistant, entry: ConfigEntry, coordinato
         {**dict(entry.data), **dict(entry.options)},
         base_url=getattr(coordinator, "base_url", ""),
         ai_settings=coordinator.ai_generator.settings.as_dict() | {"api_key": coordinator.ai_generator.settings.api_key},
+        duplicate_entries=len(hass.config_entries.async_entries(DOMAIN)) > 1,
     )
 
     issue_definitions = {
@@ -57,6 +62,11 @@ async def async_sync_repairs(hass: HomeAssistant, entry: ConfigEntry, coordinato
         ISSUE_NO_TRIVIA_CATEGORIES: {
             "translation_key": ISSUE_NO_TRIVIA_CATEGORIES,
             "severity": ir.IssueSeverity.WARNING,
+            "is_fixable": False,
+        },
+        ISSUE_DUPLICATE_ENTRIES: {
+            "translation_key": ISSUE_DUPLICATE_ENTRIES,
+            "severity": ir.IssueSeverity.ERROR,
             "is_fixable": False,
         },
     }

@@ -1,12 +1,24 @@
 {
   "config": {
     "abort": {
-      "single_instance_allowed": "Only a single HA Card Game instance is supported."
+      "single_instance_allowed": "HA Card Game is already configured. Open the existing integration in Devices & Services, or remove the old entry before adding it again.",
+      "no_config_entry": "No HA Card Game config entry exists yet.",
+      "reconfigure_successful": "HA Card Game was updated successfully."
     },
     "step": {
       "user": {
         "title": "Set up HA Card Game",
         "description": "Create the main card game entry and choose the default runtime behavior.",
+        "data": {
+          "enable_panel": "Enable sidebar panel",
+          "max_rounds": "Maximum rounds",
+          "allow_repeat_prompts": "Allow repeating prompts",
+          "default_game_mode": "Default game mode"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure HA Card Game",
+        "description": "Update the single existing HA Card Game entry.",
         "data": {
           "enable_panel": "Enable sidebar panel",
           "max_rounds": "Maximum rounds",
@@ -90,6 +102,10 @@
     "no_trivia_categories_enabled": {
       "title": "No trivia categories are enabled",
       "description": "Trivia is enabled, but no valid trivia categories are available. Reopen the options flow and enable at least one category."
+    },
+    "duplicate_entries": {
+      "title": "Duplicate HA Card Game entries detected",
+      "description": "Only one HA Card Game config entry is supported. Remove any duplicate entries from Devices & Services or restore a backup with a single entry."
     }
   }
 }

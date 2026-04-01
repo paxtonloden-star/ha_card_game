@@ -5,6 +5,8 @@ from __future__ import annotations
 from homeassistant.helpers import intent
 
 from .const import DOMAIN
+
+INTENTS_REGISTERED_KEY = f"{DOMAIN}_intents_registered"
 from .coordinator import CardGameCoordinator
 
 
@@ -21,11 +23,14 @@ async def async_setup_intents(hass) -> None:
     await async_register_intents(hass, coordinator)
 
 async def async_register_intents(hass, coordinator: CardGameCoordinator) -> None:
+    if hass.data.get(INTENTS_REGISTERED_KEY):
+        return
     intent.async_register(hass, JoinGameIntentHandler(coordinator))
     intent.async_register(hass, SubmitCardIntentHandler(coordinator))
     intent.async_register(hass, PickWinnerIntentHandler(coordinator))
     intent.async_register(hass, NextRoundIntentHandler(coordinator))
     intent.async_register(hass, StartGameIntentHandler(coordinator))
+    hass.data[INTENTS_REGISTERED_KEY] = True
 
 
 class _BaseHandler(intent.IntentHandler):
