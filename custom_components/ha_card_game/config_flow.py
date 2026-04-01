@@ -120,7 +120,7 @@ class HACardGameOptionsFlow(config_entries.OptionsFlow):
     """Manage HA Card Game options."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+        self._config_entry = config_entry
         self._options: dict[str, Any] = {**config_entry.data, **config_entry.options}
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -145,7 +145,7 @@ class HACardGameOptionsFlow(config_entries.OptionsFlow):
         return await self._async_show_and_update("trivia", _trivia_schema, user_input)
 
     async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        normalized = _normalize_options(self._options, previous={**self.config_entry.data, **self.config_entry.options})
+        normalized = _normalize_options(self._options, previous={**self._config_entry.data, **self._config_entry.options})
         return self.async_create_entry(title="", data=normalized)
 
     async def _async_show_and_update(self, step_id: str, schema_factory: Any, user_input: dict[str, Any] | None) -> FlowResult:

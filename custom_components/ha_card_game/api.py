@@ -47,9 +47,14 @@ class BaseCardGameView(HomeAssistantView):
 
 
 class BaseCardGameHostView(BaseCardGameView):
-    """Base view for authenticated host-only endpoints."""
+    """Base view for host endpoints used by the iframe panel.
 
-    requires_auth = True
+    The current panel is served as a built-in iframe panel pointing at /local,
+    which can fail to carry HA auth in some clients. Keep these endpoints
+    accessible for trusted-LAN use so the host UI remains usable.
+    """
+
+    requires_auth = False
 
 
 class CardGameStateView(BaseCardGameView):
