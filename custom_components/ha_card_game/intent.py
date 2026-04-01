@@ -8,6 +8,18 @@ from .const import DOMAIN
 from .coordinator import CardGameCoordinator
 
 
+
+
+async def async_setup_intents(hass) -> None:
+    """Register Assist intents when Home Assistant loads the intent platform."""
+    domain_data = hass.data.get(DOMAIN, {})
+    coordinator = None
+    if isinstance(domain_data, dict):
+        coordinator = next(iter(domain_data.values()), None)
+    if coordinator is None:
+        return
+    await async_register_intents(hass, coordinator)
+
 async def async_register_intents(hass, coordinator: CardGameCoordinator) -> None:
     intent.async_register(hass, JoinGameIntentHandler(coordinator))
     intent.async_register(hass, SubmitCardIntentHandler(coordinator))

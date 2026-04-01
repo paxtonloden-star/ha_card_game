@@ -21,6 +21,7 @@ from .game_engine import CardGameEngine, GameState, Player
 from .ai_generator import AIGenerator, AISettings
 from .trivia_manager import TriviaSession, get_curated_trivia_questions
 from .moderation import moderate_deck_payload, moderate_trivia_questions, normalize_parental_settings
+from .migrations import build_storage_payload, migrate_storage_payload
 
 _LOGGER = logging.getLogger(__name__)
 _ALPHABET = string.ascii_uppercase + string.digits
@@ -82,12 +83,15 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         self.custom_trivia_packs: dict[str, dict[str, Any]] = {}
         self.entry_options: dict[str, Any] = {}
+        self.storage_migration_history: list[str] = []
 
     async def async_load(self) -> None:
         await self.deck_manager.async_load()
         self.deck_manager.write_example_decks()
         saved = await self.store.async_load()
         if saved:
+            saved, applied_migrations = migrate_storage_payload(saved)
+            self.storage_migration_history = list(saved.get("storage_migration_history", applied_migrations))
             state = GameState(
                 state=saved.get("state", "idle"),
                 round_number=saved.get("round_number", 0),
@@ -156,11 +160,13 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.ai_generator.update_settings(api_key=ai_saved.get("api_key"))
         self.engine.state.available_decks = self.deck_manager.list_decks()
         self.data = self.engine.state.as_dict()
+        if saved and applied_migrations:
+            await self.async_save()
 
     async def async_save(self) -> None:
         self.engine.state.available_decks = self.deck_manager.list_decks()
         self.data = self.engine.state.as_dict()
-        payload = {
+        payload = build_storage_payload({
             **self.data,
             "join_code": self.join_code,
             "admin_token": self.admin_token,
@@ -205,6 +211,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "trivia_steal_team": self.trivia_steal_team,
             "trivia_steal_from_player": self.trivia_steal_from_player,
             "last_trivia_results": list(self.last_trivia_results),
+            "remote_base_url": self.base_url,
             "players": [
                 {
                     "name": player.name,
@@ -215,7 +222,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
                 for player in self.engine.state.players
             ],
-        }
+        }, migration_history=self.storage_migration_history)
         await self.store.async_save(payload)
         self.async_update_listeners()
         await self.async_broadcast_state()
@@ -1197,6 +1204,9 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "allow_remote_players": bool(self.parental_controls.get("allow_remote_players", False)),
             "allowed_trivia_categories": list(self.parental_controls.get("allowed_trivia_categories", [])),
             "default_game_mode": self.entry_options.get(CONF_DEFAULT_GAME_MODE, GAME_MODE_CARDS),
+            "remote_base_url": self.base_url,
+            "storage_schema_version": self.data.get("storage_schema_version"),
+            "storage_migration_history": list(self.storage_migration_history),
             "default_trivia_source": self.entry_options.get(CONF_DEFAULT_TRIVIA_SOURCE, "offline_curated"),
             "ai": {
                 "enabled": bool(self.ai_generator.settings.enabled),

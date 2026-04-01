@@ -25,6 +25,7 @@ async def system_health_info(hass: HomeAssistant) -> dict[str, object]:
         "deck_count": len(coordinator.deck_manager.list_decks()),
         "custom_deck_count": len(coordinator.deck_manager.custom_decks),
         "custom_trivia_pack_count": len(coordinator.custom_trivia_packs),
+        "storage_schema_version": coordinator.data.get("storage_schema_version"),
         "ai_enabled": bool(coordinator.ai_generator.settings.enabled),
         "remote_players_enabled": bool(coordinator.parental_controls.get("allow_remote_players")),
         "websocket_clients": len(getattr(coordinator, "_sockets", set())),

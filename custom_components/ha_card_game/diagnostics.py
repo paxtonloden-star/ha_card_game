@@ -54,6 +54,8 @@ async def async_get_config_entry_diagnostics(
             "tournament": redact_mapping(dict(coordinator.tournament)),
             "ai_queue_size": len(coordinator.ai_moderation_queue),
             "custom_trivia_pack_count": len(coordinator.custom_trivia_packs),
+            "storage_schema_version": coordinator.data.get("storage_schema_version"),
+            "storage_migration_history": list(coordinator.storage_migration_history),
             "custom_deck_count": len(coordinator.deck_manager.custom_decks),
             "available_decks": coordinator.deck_manager.list_decks(),
             "player_profile_count": len(coordinator.player_profiles),
