@@ -506,3 +506,9 @@ System health exposes high-level operational signals such as:
 This integration now includes a storage migration layer for saved game state, AI moderation data, player profiles, custom trivia packs, remote invites, and reveal/theme settings. Older payload shapes are normalized on load and then re-saved in the current schema automatically.
 
 Compatibility handling currently covers legacy keys such as old theme fields, profile lists, trivia pack lists, parental control field names, remote invite lists, and earlier AI setting names. Diagnostics and system health now expose the active storage schema version and migration history to make upgrades easier to troubleshoot.
+
+
+## Patch notes
+
+- Fixed the Options Flow crash caused by assigning to the reserved `config_entry` property in `config_flow.py`.
+- Relaxed iframe host-panel API auth so the built-in iframe sidebar panel can bootstrap and manage the game in clients where Home Assistant auth is not forwarded into `/local` iframe requests. This is intended for trusted LAN use.
