@@ -46,7 +46,7 @@
             <div class="timer-block">
               <div>
                 <label class="label" for="timerSecondsInput">Round timer</label>
-                <input id="timerSecondsInput" type="number" min="15" step="15" value="60" />
+                <input id="timerSecondsInput" type="number" min="5" step="5" value="15" />
               </div>
               <div class="actions wrap">
                 <button class="secondary" id="setTimerBtn">Start timer</button>
@@ -204,7 +204,7 @@
           </div>
         </section>
 
-        <section class="card room-panel">
+        <section class="card room-panel" id="roomPanel">
           <h2>Room</h2>
           <div class="room-code" id="joinCodeTop">------</div>
           <p class="muted">Players scan the QR code or open the join URL.</p>
@@ -237,7 +237,7 @@
 
           <div id="joinPanel">
             <p class="muted">Join this room from your phone.</p>
-            <input id="playerNameInput" placeholder="Your name" />
+            <input id="playerNameInput" placeholder="Leave blank to use your Home Assistant name" />
             <div class="actions">
               <button id="joinBtn">Join game</button>
             </div>
@@ -313,7 +313,7 @@
               <div class="label">Host controls</div>
               <div id="tvHostNotice" class="notice hidden"></div>
               <div class="tv-host-actions">
-                <input id="tvTimerSecondsInput" type="number" min="15" step="15" value="60" />
+                <input id="tvTimerSecondsInput" type="number" min="5" step="5" value="15" />
                 <button class="secondary" id="tvStartTimerBtn">Timer</button>
                 <button class="secondary" id="tvClearTimerBtn">Clear</button>
                 <button id="tvNextRoundBtn">Next round</button>
@@ -422,6 +422,7 @@
       const el = (id) => document.getElementById(id);
       const show = (node, visible) => node.classList.toggle('hidden', !visible);
       const isTvMode = () => modeFromUrl === 'tv';
+      const isDirectPlayerLink = () => !!(joinCodeFromUrl || tokenFromUrl);
 
       function persistSession(data) {
         session = data;
@@ -537,6 +538,13 @@
         document.body.dataset.theme = theme.slug || 'midnight_arcade';
         const themeLabel = el('winnerThemeLabel');
         if (themeLabel) themeLabel.textContent = theme.name || 'Round theme';
+      }
+
+      function refreshLayoutByContext() {
+        const roomPanel = el('roomPanel');
+        if (roomPanel) {
+          show(roomPanel, !isTvMode() && !isDirectPlayerLink());
+        }
       }
 
       function renderHostUsers(host) {
@@ -1081,6 +1089,12 @@
         const select = el('deckSelect');
         const selectedDeck = decks.find((item) => item.slug === state.deck_name) || decks[0];
         select.innerHTML = decks.map((deck) => `<option value="${escapeAttr(deck.slug)}">${deck.name}</option>`).join('');
+        if (state.game_mode === 'trivia') {
+          if (selectedDeck) select.value = selectedDeck.slug;
+          el('deckDescription').textContent = `Trivia category: ${state.trivia?.current_question?.category || state.trivia?.category || 'Trivia'}`;
+          el('selectedDeckMode').value = `Trivia mode · ${state.trivia?.remaining ?? 0} questions remaining`;
+          return;
+        }
         if (selectedDeck) {
           select.value = selectedDeck.slug;
           el('deckDescription').textContent = selectedDeck.description || '';
@@ -1223,7 +1237,7 @@
         const triviaMode = state.game_mode === 'trivia';
         el('tvStateLabel').textContent = triviaMode ? 'Trivia' : state.state.charAt(0).toUpperCase() + state.state.slice(1);
         el('tvRoundBadge').textContent = `Round ${state.round_number}`;
-        el('tvJudgeBadge').textContent = triviaMode ? (state.trivia?.team_mode ? 'Teams: ON' : 'Free-for-all') : `Judge: ${state.judge || '—'}`;
+        el('tvJudgeBadge').textContent = triviaMode ? (state.trivia?.team_mode ? 'Teams: ON' : 'Trivia mode') : `Judge: ${state.judge || '—'}`;
         el('tvJoinCode').textContent = state.join_code;
         el('tvQrImage').src = state.qr_url + '?t=' + Date.now();
         el('tvJoinUrlText').textContent = formatJoinUrl(state.join_url);
@@ -1276,9 +1290,10 @@
         el('qrImage').src = state.qr_url + '?t=' + Date.now();
         el('stateBadge').textContent = state.state;
         el('roundBadge').textContent = `Round ${state.round_number}`;
-        el('judgeBadge').textContent = `Judge: ${state.judge || '—'}`;
+        el('judgeBadge').textContent = state.game_mode === 'trivia' ? 'Trivia mode' : `Judge: ${state.judge || '—'}`;
         const roomLabel = state.active_instance_name || 'Live room';
         if (el('activeInstanceNameLabel')) el('activeInstanceNameLabel').textContent = roomLabel;
+        if (el('hostStartBtn')) el('hostStartBtn').textContent = state.game_mode === 'trivia' ? 'Start trivia' : 'Start game';
         el('promptText').textContent = state.current_prompt || 'Waiting for the next round…';
         renderPlayers(state.players || [], state.judge);
         renderScoreboard(state.leaderboard || []);
@@ -1288,6 +1303,7 @@
         populateRevealControls(state);
         renderTvMode(state);
         updateTimerDisplay(state);
+        refreshLayoutByContext();
       }
 
       async function fetchState() {
@@ -1319,13 +1335,13 @@
           show(el('hostControls'), false);
           show(el('hostLocked'), true);
           const locked = el('hostLocked'); if (locked) { locked.textContent = 'Host controls are limited to allowed host users.'; }
+          refreshLayoutByContext();
         }
       }
 
       async function joinPlayer() {
         try {
           const playerName = el('playerNameInput').value.trim();
-          if (!playerName) throw new Error('Enter your name');
           const joinCode = joinCodeFromUrl || latestState?.join_code;
           const data = await api('/api/ha_card_game/join', 'POST', {
             join_code: joinCode,
@@ -1403,6 +1419,7 @@
         show(el('standardLayout'), !isTvMode());
         show(el('standardScoreboardCard'), !isTvMode());
         show(el('tvShell'), isTvMode());
+        refreshLayoutByContext();
       }
 
       function connectWebSocket() {
@@ -1461,8 +1478,8 @@
       });
       el('hostStartBtn').addEventListener('click', async () => {
         try {
-          await hostAction('start_game', { deck_name: el('deckSelect').value });
-          setNotice('hostNotice', 'Game started.', 'success');
+          await hostAction('start_game', { deck_name: el('deckSelect').value, game_mode: latestState?.game_mode === 'trivia' ? 'trivia' : 'cards' });
+          setNotice('hostNotice', latestState?.game_mode === 'trivia' ? 'Trivia started.' : 'Game started.', 'success');
         } catch (err) {
           setNotice('hostNotice', err.message, 'warning');
         }

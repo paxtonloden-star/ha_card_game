@@ -10,7 +10,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.network import get_url
 
-from .const import DOMAIN, WS_EVENT_ERROR
+from .const import DOMAIN, GAME_MODE_CARDS, GAME_MODE_JUDGE_PARTY, GAME_MODE_TRIVIA, WS_EVENT_ERROR
 from .coordinator import CardGameCoordinator
 
 
@@ -45,14 +45,25 @@ class BaseCardGameView(HomeAssistantView):
     def json_error(self, message: str, status: int = 400) -> web.Response:
         return self.json({"ok": False, "error": message}, status_code=status)
 
+    def current_user(self, request: web.Request):
+        return request.get("hass_user")
+
+    def request_user_name(self, request: web.Request) -> str:
+        user = self.current_user(request)
+        if user is None:
+            return ""
+        return str(
+            getattr(user, "display_name", None)
+            or getattr(user, "name", None)
+            or getattr(user, "id", "")
+            or ""
+        ).strip()
+
 
 class BaseCardGameHostView(BaseCardGameView):
     """Base view for authenticated host endpoints."""
 
     requires_auth = True
-
-    def current_user(self, request: web.Request):
-        return request.get("hass_user")
 
     async def ensure_host_access(self, request: web.Request) -> web.Response | None:
         user = self.current_user(request)
@@ -80,7 +91,7 @@ class CardGameJoinView(BaseCardGameView):
         if join_code != self.coordinator.join_code:
             return self.json_error("Invalid join code", 403)
 
-        player_name = str(data.get("player_name", "")).strip()
+        player_name = str(data.get("player_name", "")).strip() or self.request_user_name(request)
         if not player_name:
             return self.json_error("Player name is required")
 
@@ -105,8 +116,6 @@ class CardGameSubmitView(BaseCardGameView):
         except ValueError as err:
             return self.json_error(str(err))
         return self.json({"ok": True})
-
-
 
 
 class CardGameBuzzView(BaseCardGameView):
@@ -192,6 +201,7 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                 "host_policy": "admins_if_empty" if not self.coordinator.allowed_host_user_ids else "selected_users_only",
                 "available_actions": [
                     "start_game",
+                    "set_game_mode",
                     "next_round",
                     "reset_game",
                     "set_deck",
@@ -232,6 +242,11 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                     "save_custom_trivia_pack",
                     "delete_custom_trivia_pack",
                 ],
+                "game_modes": [
+                    {"value": GAME_MODE_TRIVIA, "label": "Trivia"},
+                    {"value": GAME_MODE_CARDS, "label": "Cards Against Us"},
+                    {"value": GAME_MODE_JUDGE_PARTY, "label": "Kids Cards Against Us"},
+                ],
                 "reveal": {
                     "sound_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("sound_options", [])),
                     "flip_style_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("flip_style_options", [])),
@@ -268,6 +283,12 @@ class CardGameHostActionView(BaseCardGameHostView):
         try:
             if action == "start_game":
                 await self.coordinator.async_start_game(data.get("deck_name"), game_mode=str(data.get("game_mode", "cards")))
+            elif action == "set_game_mode":
+                game_mode = str(data.get("game_mode", "")).strip()
+                if game_mode not in {GAME_MODE_CARDS, GAME_MODE_JUDGE_PARTY, GAME_MODE_TRIVIA}:
+                    return self.json_error("Unsupported game mode")
+                self.coordinator.game_mode = game_mode
+                await self.coordinator.async_refresh_from_engine()
             elif action == "next_round":
                 self.coordinator.engine.next_round()
                 await self.coordinator.async_refresh_from_engine()
