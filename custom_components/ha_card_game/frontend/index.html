@@ -11,7 +11,7 @@
       <header class="hero" id="standardHero">
         <div>
           <div class="eyebrow">HA Card Game</div>
-          <h1>Live room</h1>
+          <h1><span id="activeInstanceNameLabel">Live room</span></h1>
           <p class="muted">Host controls for Home Assistant plus the same mobile player and judge flow.</p>
         </div>
         <div class="pill-row">
@@ -21,10 +21,11 @@
           <span class="badge" id="roundBadge">Round 0</span>
           <span class="badge" id="judgeBadge">Judge: —</span>
         </div>
+        <div class="hero-scoreboard" id="topScoreboard"></div>
       </header>
 
       <div class="layout three-col" id="standardLayout">
-        <section class="card host-panel">
+        <section class="card host-panel host-only">
           <h2>Host controls</h2>
           <div id="hostNotice" class="notice hidden"></div>
           <div id="hostLocked" class="muted">Open this page from the Home Assistant sidebar to manage the room. If host controls stay locked, refresh the page after signing into Home Assistant again.</div>
@@ -69,6 +70,26 @@
               <select id="hostUsersSelect" multiple size="6"></select>
               <div class="actions wrap" style="margin-top:12px;">
                 <button class="secondary" id="saveHostUsersBtn">Save host users</button>
+              </div>
+            </div>
+
+            <div class="reveal-settings" style="margin-top:12px;" id="instanceManager">
+              <h3>Game instances</h3>
+              <p class="muted">Create and switch between saved game rooms inside this one integration. The currently selected room is the active room for the sidebar and public join flow.</p>
+              <div class="control-grid">
+                <div>
+                  <label class="label" for="instanceSelect">Active room</label>
+                  <select id="instanceSelect"></select>
+                </div>
+                <div>
+                  <label class="label" for="newInstanceNameInput">New room name</label>
+                  <input id="newInstanceNameInput" placeholder="Movie Night" />
+                </div>
+              </div>
+              <div class="actions wrap" style="margin-top:12px;">
+                <button class="secondary" id="selectInstanceBtn">Switch room</button>
+                <button class="secondary" id="createInstanceBtn">Create room</button>
+                <button class="danger" id="deleteInstanceBtn">Delete selected room</button>
               </div>
             </div>
 
@@ -385,6 +406,7 @@
       let session = JSON.parse(localStorage.getItem(storageKey) || 'null');
       if (tokenFromUrl) { persistTemp = { player_name: nameFromUrl || (session && session.player_name) || '', session_token: tokenFromUrl }; localStorage.setItem(storageKey, JSON.stringify(persistTemp)); session = persistTemp; }
       let latestState = null;
+      let latestHost = null;
       let ws = null;
       let reconnectTimer = null;
       let hostEnabled = false;
@@ -519,13 +541,39 @@
 
       function renderHostUsers(host) {
         const select = el('hostUsersSelect');
-        if (!select) return;
+        const instanceSelect = el('instanceSelect');
         const users = Array.isArray(host?.available_host_users) ? host.available_host_users : [];
         const selectedIds = new Set(Array.isArray(host?.allowed_host_user_ids) ? host.allowed_host_user_ids : []);
-        select.innerHTML = users.map((user) => {
-          const label = `${escapeHtml(user.name)}${user.is_admin ? ' (admin)' : ''}${user.is_active === false ? ' [inactive]' : ''}`;
-          return `<option value="${escapeAttr(user.id)}"${selectedIds.has(user.id) ? ' selected' : ''}>${label}</option>`;
-        }).join('');
+        if (select) {
+          select.innerHTML = users.map((user) => {
+            const label = `${escapeHtml(user.name)}${user.is_admin ? ' (admin)' : ''}${user.is_active === false ? ' [inactive]' : ''}`;
+            return `<option value="${escapeAttr(user.id)}"${selectedIds.has(user.id) ? ' selected' : ''}>${label}</option>`;
+          }).join('');
+        }
+        if (instanceSelect) {
+          const instances = Array.isArray(host?.instances) ? host.instances : (latestState?.instances || []);
+          const activeId = host?.active_instance_id || latestState?.active_instance_id || '';
+          instanceSelect.innerHTML = instances.map((item) => `<option value="${escapeAttr(item.id)}"${item.id === activeId ? ' selected' : ''}>${escapeHtml(item.name)} · ${escapeHtml(item.game_mode || 'cards')} · ${item.player_count || 0} players</option>`).join('');
+        }
+        renderPlayerUserLinks(users);
+      }
+
+      function renderPlayerUserLinks(users) {
+        const list = el('playersList');
+        if (!list || !hostEnabled) return;
+        list.querySelectorAll('[data-player-user-select]').forEach((select) => {
+          const playerName = select.dataset.playerUserSelect;
+          const currentUser = latestState?.player_user_links?.[playerName] || '';
+          select.innerHTML = `<option value="">No linked HA user</option>` + users.map((user) => `<option value="${escapeAttr(user.id)}"${user.id === currentUser ? ' selected' : ''}>${escapeHtml(user.name)}</option>`).join('');
+          select.addEventListener('change', async () => {
+            try {
+              await hostAction('link_player_user', { player_name: playerName, user_id: select.value || '' });
+              setNotice('hostNotice', `Updated linked user for ${playerName}.`, 'success');
+            } catch (err) {
+              setNotice('hostNotice', err.message, 'warning');
+            }
+          });
+        });
       }
 
       function populateRevealControls(state) {
@@ -842,6 +890,7 @@
                 ${teamMode ? `<span class="badge">${player.team || 'Solo'}</span>` : ''}
                 <span class="badge">${player.score} pts</span>
                 <span class="badge">${player.hand_count || 0} hand</span>
+                ${hostEnabled ? `<select class="small-select" data-player-user-select="${escapeAttr(player.name)}"></select>` : ''}
                 ${hostEnabled && teamMode ? `<button class="secondary small-btn" data-assign-team="${escapeAttr(player.name)}" data-team-name="Team A">A</button><button class="secondary small-btn" data-assign-team="${escapeAttr(player.name)}" data-team-name="Team B">B</button>` : ''}
                 ${hostEnabled ? `<button class="danger small-btn" data-remove-player="${escapeAttr(player.name)}">Remove</button>` : ''}
               </div>
@@ -868,6 +917,7 @@
               }
             });
           });
+          renderPlayerUserLinks(Array.isArray(latestHost?.available_host_users) ? latestHost.available_host_users : []);
         }
 
         const tvPlayers = el('tvPlayers');
@@ -883,12 +933,17 @@
         const teamBoard = latestState?.trivia?.team_mode ? (latestState?.trivia?.team_leaderboard || latestState?.team_leaderboard || []) : [];
         const teamMarkup = teamBoard.length ? `<div style="margin-bottom:12px;"><div class="label">Teams</div>${teamBoard.map((item, idx) => `<div class="row"><strong>#${idx + 1} ${item.name}</strong><span class="badge">${item.score} pts</span></div>`).join('')}</div>` : '';
         const markup = leaderboard.map((item, idx) => `
-          <div class="row">
-            <strong>#${idx + 1} ${item.name}</strong>
+          <div class="row score-row-with-avatar">
+            <div class="score-name-wrap">
+              ${item.picture_url ? `<img class="score-avatar" src="${escapeAttr(item.picture_url)}" alt="${escapeAttr(item.name)}" />` : `<div class="score-avatar placeholder">${escapeHtml((item.name || '?').slice(0,1).toUpperCase())}</div>`}
+              <strong>#${idx + 1} ${item.name}</strong>
+            </div>
             <span class="badge">${item.score} pts</span>
           </div>
         `).join('') || '<div class="muted">No scores yet.</div>';
-        el('scoreboard').innerHTML = teamMarkup + markup;
+        const combined = teamMarkup + markup;
+        if (el('scoreboard')) el('scoreboard').innerHTML = combined;
+        if (el('topScoreboard')) el('topScoreboard').innerHTML = `<div class="label">Scoreboard</div>${markup}`;
 
         el('tvScoreboard').innerHTML = (teamBoard.length ? teamBoard.map((item, idx) => `
           <div class="tv-score-row ${idx === 0 ? 'leader' : ''}">
@@ -1222,6 +1277,8 @@
         el('stateBadge').textContent = state.state;
         el('roundBadge').textContent = `Round ${state.round_number}`;
         el('judgeBadge').textContent = `Judge: ${state.judge || '—'}`;
+        const roomLabel = state.active_instance_name || 'Live room';
+        if (el('activeInstanceNameLabel')) el('activeInstanceNameLabel').textContent = roomLabel;
         el('promptText').textContent = state.current_prompt || 'Waiting for the next round…';
         renderPlayers(state.players || [], state.judge);
         renderScoreboard(state.leaderboard || []);
@@ -1246,14 +1303,18 @@
       async function bootstrapHost() {
         try {
           const data = await api('/api/ha_card_game/host/bootstrap');
+          latestHost = data.host || null;
           hostEnabled = !!data.host?.can_manage;
+          document.body.classList.toggle('host-user', hostEnabled);
           el('hostBadge').textContent = 'Host UI: enabled';
           show(el('hostControls'), true);
           show(el('hostLocked'), false);
           render(data.state);
           renderHostUsers(data.host);
         } catch (_err) {
+          latestHost = null;
           hostEnabled = false;
+          document.body.classList.toggle('host-user', false);
           el('hostBadge').textContent = 'Host UI: locked';
           show(el('hostControls'), false);
           show(el('hostLocked'), true);

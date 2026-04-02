@@ -568,3 +568,50 @@ body.tv-mode .tv-shell {
     font-size: 30px;
   }
 }
+
+
+.host-only { display: none; }
+body.host-user .host-only { display: block; }
+
+.hero-scoreboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.score-row-with-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.score-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.score-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+.score-avatar.placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.12);
+  color: #fff;
+  font-weight: 700;
+}
+
+.small-select {
+  max-width: 160px;
+  font-size: 12px;
+}
