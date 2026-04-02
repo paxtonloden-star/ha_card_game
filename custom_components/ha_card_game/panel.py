@@ -13,7 +13,7 @@ from .const import DOMAIN
 
 async def async_register_panel(hass: HomeAssistant) -> None:
     """Register a basic iframe panel pointing to the local HTML app."""
-    panel_path = f"/local/{DOMAIN}/index.html"
+    panel_path = f"/local/{DOMAIN}/index.modular.html"
 
     static_dir = Path(__file__).parent / "frontend"
     await hass.http.async_register_static_paths(
