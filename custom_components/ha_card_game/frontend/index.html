@@ -27,7 +27,7 @@
         <section class="card host-panel">
           <h2>Host controls</h2>
           <div id="hostNotice" class="notice hidden"></div>
-          <div id="hostLocked" class="muted">Open this page from the Home Assistant sidebar to manage the room.</div>
+          <div id="hostLocked" class="muted">Open this page from the Home Assistant sidebar to manage the room. If host controls stay locked, refresh the page after signing into Home Assistant again.</div>
 
           <div id="hostControls" class="hidden">
             <div class="control-grid">
@@ -406,6 +406,41 @@
         localStorage.setItem(storageKey, JSON.stringify(data));
       }
 
+      function findParentHass() {
+        try {
+          if (window.parent && window.parent !== window) {
+            const roots = window.parent.document.querySelectorAll('home-assistant, hc-main, home-assistant-main');
+            for (const root of roots) {
+              if (root && root.hass) return root.hass;
+              if (root && root.__data && root.__data.hass) return root.__data.hass;
+            }
+            const first = window.parent.document.querySelector('home-assistant');
+            if (first && first.hass) return first.hass;
+          }
+        } catch (_err) {
+          // Cross-frame access can fail in some contexts; fall back below.
+        }
+        return null;
+      }
+
+      function getBearerToken() {
+        try {
+          const parentHass = findParentHass();
+          const token = parentHass?.auth?.data?.accessToken;
+          if (token) return token;
+        } catch (_err) {}
+
+        try {
+          const raw = window.localStorage.getItem('hassTokens');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed?.access_token) return parsed.access_token;
+          }
+        } catch (_err) {}
+
+        return null;
+      }
+
       async function api(path, method = 'GET', body = null) {
         const options = { method, headers: {} };
         if (body) {
@@ -413,6 +448,12 @@
           options.body = JSON.stringify(body);
         }
         options.credentials = 'same-origin';
+
+        const token = getBearerToken();
+        if (token) {
+          options.headers['Authorization'] = 'Bearer ' + token;
+        }
+
         const response = await fetch(path, options);
         const data = await response.json().catch(() => ({}));
         if (!response.ok || data.ok === false) {
