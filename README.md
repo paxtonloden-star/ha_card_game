@@ -521,3 +521,8 @@ This repo now includes a **Judge Party** mode: one player is the judge, everyone
 ### AI-generated judge decks
 
 The AI deck generator now supports a `judge_party` style that creates original black-card prompts and white-card answers for judge-style rounds. It can either save a new deck or append new cards into an existing deck.
+
+
+## Allowed host users
+
+You can now limit host controls to specific Home Assistant users. Open the host/admin panel, go to **Host access**, and select the HA users who should be allowed to manage the room. When no users are selected, any Home Assistant admin can open the host UI.
