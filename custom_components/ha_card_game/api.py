@@ -47,14 +47,18 @@ class BaseCardGameView(HomeAssistantView):
 
 
 class BaseCardGameHostView(BaseCardGameView):
-    """Base view for host endpoints used by the iframe panel.
-
-    The current panel is served as a built-in iframe panel pointing at /local,
-    which can fail to carry HA auth in some clients. Keep these endpoints
-    accessible for trusted-LAN use so the host UI remains usable.
-    """
+    """Base view for authenticated host endpoints."""
 
     requires_auth = True
+
+    def current_user(self, request: web.Request):
+        return request.get("hass_user")
+
+    async def ensure_host_access(self, request: web.Request) -> web.Response | None:
+        user = self.current_user(request)
+        if self.coordinator.user_can_host(user):
+            return None
+        return self.json_error("Host access denied", status=403)
 
 
 class CardGameStateView(BaseCardGameView):
@@ -174,11 +178,18 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
     name = f"api:{DOMAIN}:host_bootstrap"
 
     async def get(self, request: web.Request) -> web.Response:
+        denied = await self.ensure_host_access(request)
+        if denied is not None:
+            return denied
+        host_users = await self.coordinator.async_available_host_users()
         return self.json({
             "ok": True,
             "state": self.coordinator.player_state(None),
             "host": {
                 "can_manage": True,
+                "allowed_host_user_ids": list(self.coordinator.allowed_host_user_ids),
+                "available_host_users": host_users,
+                "host_policy": "admins_if_empty" if not self.coordinator.allowed_host_user_ids else "selected_users_only",
                 "available_actions": [
                     "start_game",
                     "next_round",
@@ -197,6 +208,7 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                     "export_deck_packs",
                     "set_ai_settings",
                     "set_parental_controls",
+                    "set_allowed_host_users",
                     "approve_ai_queue_item",
                     "reject_ai_queue_item",
                     "generate_ai_deck",
@@ -247,6 +259,9 @@ class CardGameHostActionView(BaseCardGameHostView):
     name = f"api:{DOMAIN}:host_action"
 
     async def post(self, request: web.Request) -> web.Response:
+        denied = await self.ensure_host_access(request)
+        if denied is not None:
+            return denied
         data = await request.json()
         action = str(data.get("action", "")).strip()
 
@@ -305,6 +320,11 @@ class CardGameHostActionView(BaseCardGameHostView):
                     api_key=str(data.get("api_key")).strip() if data.get("api_key") is not None else None,
                     use_local_fallback=bool(data.get("use_local_fallback")) if data.get("use_local_fallback") is not None else None,
                 )
+            elif action == "set_allowed_host_users":
+                user_ids = data.get("user_ids")
+                if not isinstance(user_ids, list):
+                    return self.json_error("user_ids must be a list")
+                await self.coordinator.async_set_allowed_host_users(user_ids)
             elif action == "set_parental_controls":
                 categories = data.get("allowed_trivia_categories")
                 await self.coordinator.async_set_parental_controls(

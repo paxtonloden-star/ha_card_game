@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import ADMIN_TOKEN_LENGTH, AI_QUEUE_MAX_ITEMS, CONF_AI_API_KEY, CONF_AI_ENABLED, CONF_AI_ENDPOINT, CONF_AI_MODEL, CONF_AI_USE_LOCAL_FALLBACK, CONF_ALLOW_REMOTE_PLAYERS, CONF_ALLOWED_TRIVIA_CATEGORIES, CONF_CONTENT_MODE, CONF_DEFAULT_GAME_MODE, CONF_DEFAULT_TRIVIA_SOURCE, CONF_MAX_ROUNDS, CONF_REMOTE_BASE_URL, CONF_REQUIRE_AI_APPROVAL, DEFAULT_AUTO_ADVANCE_ENABLED, DEFAULT_AUTO_ADVANCE_SECONDS, DEFAULT_DECK, DEFAULT_FLIP_STYLE, DEFAULT_PARENTAL_CONTROLS, DEFAULT_REMOTE_BASE_URL, DEFAULT_REVEAL_DURATION_MS, DEFAULT_REVEAL_SOUND, DEFAULT_SUBMISSION_REVEAL_ENABLED, DEFAULT_SUBMISSION_REVEAL_STEP_MS, DEFAULT_TICK_SOUND_PACK, DEFAULT_THEME_PRESET, DOMAIN, JOIN_CODE_LENGTH, PLAYER_TOKEN_LENGTH, STORAGE_KEY, STORAGE_VERSION, WS_EVENT_STATE, GAME_MODE_CARDS, GAME_MODE_JUDGE_PARTY, GAME_MODE_TRIVIA, TRIVIA_DIFFICULTY_BY_AGE, TRIVIA_CATEGORIES
+from .const import ADMIN_TOKEN_LENGTH, AI_QUEUE_MAX_ITEMS, CONF_AI_API_KEY, CONF_AI_ENABLED, CONF_AI_ENDPOINT, CONF_AI_MODEL, CONF_AI_USE_LOCAL_FALLBACK, CONF_ALLOW_REMOTE_PLAYERS, CONF_ALLOWED_HOST_USER_IDS, CONF_ALLOWED_TRIVIA_CATEGORIES, CONF_CONTENT_MODE, CONF_DEFAULT_GAME_MODE, CONF_DEFAULT_TRIVIA_SOURCE, CONF_MAX_ROUNDS, CONF_REMOTE_BASE_URL, CONF_REQUIRE_AI_APPROVAL, DEFAULT_ALLOWED_HOST_USER_IDS, DEFAULT_AUTO_ADVANCE_ENABLED, DEFAULT_AUTO_ADVANCE_SECONDS, DEFAULT_DECK, DEFAULT_FLIP_STYLE, DEFAULT_PARENTAL_CONTROLS, DEFAULT_REMOTE_BASE_URL, DEFAULT_REVEAL_DURATION_MS, DEFAULT_REVEAL_SOUND, DEFAULT_SUBMISSION_REVEAL_ENABLED, DEFAULT_SUBMISSION_REVEAL_STEP_MS, DEFAULT_TICK_SOUND_PACK, DEFAULT_THEME_PRESET, DOMAIN, JOIN_CODE_LENGTH, PLAYER_TOKEN_LENGTH, STORAGE_KEY, STORAGE_VERSION, WS_EVENT_STATE, GAME_MODE_CARDS, GAME_MODE_JUDGE_PARTY, GAME_MODE_TRIVIA, TRIVIA_DIFFICULTY_BY_AGE, TRIVIA_CATEGORIES
 from .deck_manager import DeckManager
 from .game_engine import CardGameEngine, GameState, Player
 from .ai_generator import AIGenerator, AISettings
@@ -83,6 +83,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         self.custom_trivia_packs: dict[str, dict[str, Any]] = {}
         self.entry_options: dict[str, Any] = {}
+        self.allowed_host_user_ids: list[str] = list(DEFAULT_ALLOWED_HOST_USER_IDS)
         self.storage_migration_history: list[str] = []
 
     async def async_load(self) -> None:
@@ -142,6 +143,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.scene_media_config = {**self.scene_media_config, **dict(saved.get("scene_media_config", {}))}
             self.tournament = {**self.tournament, **dict(saved.get("tournament", {}))}
             self.custom_trivia_packs = dict(saved.get("custom_trivia_packs", {}))
+            self.allowed_host_user_ids = [str(item) for item in saved.get("allowed_host_user_ids", DEFAULT_ALLOWED_HOST_USER_IDS) if str(item).strip()]
             self.trivia_team_mode = bool(saved.get("trivia_team_mode", False))
             self.last_trivia_results = list(saved.get("last_trivia_results", []))
             self.trivia_buzzer_mode = bool(saved.get("trivia_buzzer_mode", False))
@@ -212,6 +214,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "trivia_steal_from_player": self.trivia_steal_from_player,
             "last_trivia_results": list(self.last_trivia_results),
             "remote_base_url": self.base_url,
+            "allowed_host_user_ids": list(self.allowed_host_user_ids),
             "players": [
                 {
                     "name": player.name,
@@ -412,6 +415,51 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return player_name
         raise ValueError("Invalid player session")
 
+    def user_can_host(self, user: Any | None) -> bool:
+        """Return whether an authenticated HA user can manage the host UI."""
+        if user is None:
+            return False
+        user_id = str(getattr(user, "id", "") or "").strip()
+        is_admin = bool(getattr(user, "is_admin", False))
+        if not self.allowed_host_user_ids:
+            return is_admin
+        return user_id in self.allowed_host_user_ids
+
+    async def async_available_host_users(self) -> list[dict[str, Any]]:
+        """Return Home Assistant users that can be selected as hosts."""
+        users: list[dict[str, Any]] = []
+        try:
+            ha_users = await self.hass.auth.async_get_users()
+        except Exception:  # pragma: no cover - depends on HA auth backend
+            return users
+        for user in ha_users:
+            user_id = str(getattr(user, "id", "") or "").strip()
+            if not user_id:
+                continue
+            name = str(getattr(user, "name", None) or getattr(user, "display_name", None) or user_id)
+            is_active = not bool(getattr(user, "is_active", True) is False)
+            users.append({
+                "id": user_id,
+                "name": name,
+                "is_admin": bool(getattr(user, "is_admin", False)),
+                "is_active": is_active,
+                "selected": user_id in self.allowed_host_user_ids,
+            })
+        users.sort(key=lambda item: (not item["is_admin"], item["name"].lower()))
+        return users
+
+    async def async_set_allowed_host_users(self, user_ids: list[str]) -> None:
+        """Persist the list of HA users allowed to open host controls."""
+        available = await self.async_available_host_users()
+        valid_ids = {item["id"] for item in available}
+        cleaned: list[str] = []
+        for item in user_ids:
+            user_id = str(item or "").strip()
+            if user_id and user_id in valid_ids and user_id not in cleaned:
+                cleaned.append(user_id)
+        self.allowed_host_user_ids = cleaned
+        await self.async_refresh_from_engine()
+
     def player_state(self, token: str | None) -> dict[str, Any]:
         player_name = None
         if token:
@@ -447,6 +495,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         state["scene_media"] = dict(self.scene_media_config)
         state["tournament"] = self._tournament_state()
         state["parental_controls"] = dict(self.parental_controls)
+        state["allowed_host_user_ids"] = list(self.allowed_host_user_ids)
         state["ai_moderation_queue"] = [
             {
                 "id": item.get("id"),
@@ -1207,6 +1256,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "allowed_trivia_categories": list(self.parental_controls.get("allowed_trivia_categories", [])),
             "default_game_mode": self.entry_options.get(CONF_DEFAULT_GAME_MODE, GAME_MODE_CARDS),
             "remote_base_url": self.base_url,
+            "allowed_host_user_ids": list(self.allowed_host_user_ids),
             "storage_schema_version": self.data.get("storage_schema_version"),
             "storage_migration_history": list(self.storage_migration_history),
             "default_trivia_source": self.entry_options.get(CONF_DEFAULT_TRIVIA_SOURCE, "offline_curated"),
