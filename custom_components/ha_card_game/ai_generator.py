@@ -65,8 +65,8 @@ class AIGenerator:
 
     async def _generate_pack_remote(self, **kwargs: Any) -> dict[str, Any]:
         instructions = (
-            "Return JSON with keys slug,name,description,prompts,white_cards. "
-            "Prompts should be short fill-in-the-blank black cards. White cards should be concise punchlines."
+            "Return JSON with keys slug,name,description,prompts,white_cards,style. "
+            "Prompts should be short fill-in-the-blank black cards for a judge-based party card game. White cards should be concise punchlines. Do not copy any existing commercial card text verbatim. Keep content within the requested family_friendly or age_range boundaries and avoid hateful or exploitative content."
         )
         user_text = json.dumps(kwargs)
         payload = {
@@ -86,6 +86,7 @@ class AIGenerator:
             "white_cards": [str(x).strip() for x in data.get("white_cards", []) if str(x).strip()],
             "allow_free_text": True,
             "hand_size": 7,
+            "style": "judge_party",
         }
 
     async def _generate_trivia_remote(self, **kwargs: Any) -> list[dict[str, Any]]:
@@ -155,6 +156,7 @@ class AIGenerator:
             "white_cards": white_cards[:white_count],
             "allow_free_text": True,
             "hand_size": 7,
+            "style": "judge_party",
         }
 
     def _generate_trivia_local(self, *, category: str, age_range: str, difficulty: str, question_count: int) -> list[dict[str, Any]]:

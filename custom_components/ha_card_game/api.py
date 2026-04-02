@@ -47,14 +47,15 @@ class BaseCardGameView(HomeAssistantView):
 
 
 class BaseCardGameHostView(BaseCardGameView):
-    """Base view for host endpoints used by the iframe panel.
+    """Base view for authenticated host/admin endpoints."""
 
-    The current panel is served as a built-in iframe panel pointing at /local,
-    which can fail to carry HA auth in some clients. Keep these endpoints
-    accessible for trusted-LAN use so the host UI remains usable.
-    """
+    requires_auth = True
 
-    requires_auth = False
+    @staticmethod
+    def _ensure_admin(request: web.Request) -> None:
+        user = request.get("hass_user")
+        if user is None or not getattr(user, "is_admin", False):
+            raise web.HTTPForbidden(text="Admin access required")
 
 
 class CardGameStateView(BaseCardGameView):
@@ -71,6 +72,7 @@ class CardGameJoinView(BaseCardGameView):
     name = f"api:{DOMAIN}:join"
 
     async def post(self, request: web.Request) -> web.Response:
+        self._ensure_admin(request)
         data = await request.json()
         join_code = str(data.get("join_code", "")).strip().upper()
         if join_code != self.coordinator.join_code:
@@ -174,11 +176,13 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
     name = f"api:{DOMAIN}:host_bootstrap"
 
     async def get(self, request: web.Request) -> web.Response:
+        self._ensure_admin(request)
         return self.json({
             "ok": True,
             "state": self.coordinator.player_state(None),
             "host": {
                 "can_manage": True,
+                "is_admin_session": True,
                 "available_actions": [
                     "start_game",
                     "next_round",

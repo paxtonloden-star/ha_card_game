@@ -465,7 +465,7 @@ class CardGameEngine:
         if self._state.state in {STATE_SUBMITTING, STATE_JUDGING}:
             judge = self._state.current_judge
             non_judges = [p for p in self._state.players if p.name != judge]
-            if len(self._state.players) < 3:
+            if len(self._state.players) < 2:
                 self._state.state = STATE_LOBBY
                 self._state.current_prompt = None
                 self._state.winner = None
@@ -487,8 +487,8 @@ class CardGameEngine:
         return self._state
 
     def start_game(self, deck_name: str = DEFAULT_DECK, prompts: list[str] | None = None, white_cards: list[str] | None = None, allow_free_text: bool = False, hand_size: int = DEFAULT_HAND_SIZE) -> GameState:
-        if len(self._state.players) < 3:
-            raise ValueError("At least 3 players are required to start the game")
+        if len(self._state.players) < 2:
+            raise ValueError("At least 2 players are required to start the game")
         self._state.deck_name = deck_name
         self._state.allow_free_text = allow_free_text
         self._state.hand_size = hand_size
@@ -513,8 +513,8 @@ class CardGameEngine:
         return self._state
 
     def next_round(self) -> GameState:
-        if len(self._state.players) < 3:
-            raise ValueError("At least 3 players are required")
+        if len(self._state.players) < 2:
+            raise ValueError("At least 2 players are required")
         self._state.round_number += 1
         self._state.judge_index = (self._state.judge_index + 1) % len(self._state.players)
         self._state.winner = None
