@@ -10,7 +10,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.network import get_url
 
-from .const import DOMAIN, WS_EVENT_ERROR
+from .const import DOMAIN, GAME_MODE_CARDS, GAME_MODE_JUDGE_PARTY, GAME_MODE_TRIVIA, WS_EVENT_ERROR
 from .coordinator import CardGameCoordinator
 
 
@@ -201,6 +201,7 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                 "host_policy": "admins_if_empty" if not self.coordinator.allowed_host_user_ids else "selected_users_only",
                 "available_actions": [
                     "start_game",
+                    "set_game_mode",
                     "next_round",
                     "reset_game",
                     "set_deck",
@@ -241,6 +242,11 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                     "save_custom_trivia_pack",
                     "delete_custom_trivia_pack",
                 ],
+                "game_modes": [
+                    {"value": GAME_MODE_TRIVIA, "label": "Trivia"},
+                    {"value": GAME_MODE_CARDS, "label": "Cards Against Us"},
+                    {"value": GAME_MODE_JUDGE_PARTY, "label": "Kids Cards Against Us"},
+                ],
                 "reveal": {
                     "sound_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("sound_options", [])),
                     "flip_style_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("flip_style_options", [])),
@@ -277,6 +283,12 @@ class CardGameHostActionView(BaseCardGameHostView):
         try:
             if action == "start_game":
                 await self.coordinator.async_start_game(data.get("deck_name"), game_mode=str(data.get("game_mode", "cards")))
+            elif action == "set_game_mode":
+                game_mode = str(data.get("game_mode", "")).strip()
+                if game_mode not in {GAME_MODE_CARDS, GAME_MODE_JUDGE_PARTY, GAME_MODE_TRIVIA}:
+                    return self.json_error("Unsupported game mode")
+                self.coordinator.game_mode = game_mode
+                await self.coordinator.async_refresh_from_engine()
             elif action == "next_round":
                 self.coordinator.engine.next_round()
                 await self.coordinator.async_refresh_from_engine()
