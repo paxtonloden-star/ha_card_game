@@ -526,3 +526,13 @@ The AI deck generator now supports a `judge_party` style that creates original b
 ## Allowed host users
 
 You can now limit host controls to specific Home Assistant users. Open the host/admin panel, go to **Host access**, and select the HA users who should be allowed to manage the room. When no users are selected, any Home Assistant admin can open the host UI.
+
+
+## Multi-instance rooms
+
+This build adds selectable saved game rooms inside the single HA Card Game integration. The host can create, switch, and delete rooms from the sidebar host panel. The currently selected room is the active room used by the sidebar and public join flow.
+
+It also adds:
+- host-only room and admin controls
+- scoreboard moved into the top header
+- optional player-to-HA-user linking so scoreboard avatars can use Home Assistant person pictures even when the in-game display name differs
