@@ -1184,10 +1184,10 @@
       async function bootstrapHost() {
         try {
           const data = await api('/api/ha_card_game/host/bootstrap');
-          hostEnabled = !!(data.host?.can_manage && data.host?.is_admin_session);
-          el('hostBadge').textContent = hostEnabled ? 'Host UI: enabled' : 'Host UI: player mode';
-          show(el('hostControls'), hostEnabled);
-          show(el('hostLocked'), !hostEnabled);
+          hostEnabled = !!data.host?.can_manage;
+          el('hostBadge').textContent = 'Host UI: enabled';
+          show(el('hostControls'), true);
+          show(el('hostLocked'), false);
           render(data.state);
         } catch (_err) {
           hostEnabled = false;
@@ -1729,7 +1729,7 @@
       ensureExtraHostTools(); if (window.renderAiModerationQueue) window.renderAiModerationQueue();
       ensureManualHostEditor(); if (window.renderManualEditor) window.renderManualEditor();
       applyModeLayout();
-      if (!joinCodeFromUrl) bootstrapHost().catch(() => {});
+      bootstrapHost().catch(() => {});
       fetchState();
       connectWebSocket();
       if (nameFromUrl && el('playerNameInput')) el('playerNameInput').value = decodeURIComponent(nameFromUrl);
