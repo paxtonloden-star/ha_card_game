@@ -62,6 +62,16 @@
               <button class="danger" id="hostResetBtn">Reset lobby</button>
             </div>
 
+            <div class="reveal-settings" style="margin-top:12px;">
+              <h3>Host access</h3>
+              <p class="muted">Choose which Home Assistant users can open host controls. When no users are selected, any HA admin can host.</p>
+              <label class="label" for="hostUsersSelect">Allowed host users</label>
+              <select id="hostUsersSelect" multiple size="6"></select>
+              <div class="actions wrap" style="margin-top:12px;">
+                <button class="secondary" id="saveHostUsersBtn">Save host users</button>
+              </div>
+            </div>
+
             <div class="control-grid preset-manager-grid" style="margin-top:12px;">
               <div>
                 <label class="label" for="deckImportModeSelect">Deck import mode</label>
@@ -464,6 +474,17 @@
         document.body.dataset.theme = theme.slug || 'midnight_arcade';
         const themeLabel = el('winnerThemeLabel');
         if (themeLabel) themeLabel.textContent = theme.name || 'Round theme';
+      }
+
+      function renderHostUsers(host) {
+        const select = el('hostUsersSelect');
+        if (!select) return;
+        const users = Array.isArray(host?.available_host_users) ? host.available_host_users : [];
+        const selectedIds = new Set(Array.isArray(host?.allowed_host_user_ids) ? host.allowed_host_user_ids : []);
+        select.innerHTML = users.map((user) => {
+          const label = `${escapeHtml(user.name)}${user.is_admin ? ' (admin)' : ''}${user.is_active === false ? ' [inactive]' : ''}`;
+          return `<option value="${escapeAttr(user.id)}"${selectedIds.has(user.id) ? ' selected' : ''}>${label}</option>`;
+        }).join('');
       }
 
       function populateRevealControls(state) {
@@ -1189,11 +1210,13 @@
           show(el('hostControls'), true);
           show(el('hostLocked'), false);
           render(data.state);
+          renderHostUsers(data.host);
         } catch (_err) {
           hostEnabled = false;
-          el('hostBadge').textContent = 'Host UI: player mode';
+          el('hostBadge').textContent = 'Host UI: locked';
           show(el('hostControls'), false);
           show(el('hostLocked'), true);
+          const locked = el('hostLocked'); if (locked) { locked.textContent = 'Host controls are limited to allowed host users.'; }
         }
       }
 
@@ -1373,6 +1396,16 @@
       el('openTvBtn').addEventListener('click', openTvMode);
       el('toggleFullscreenBtn').addEventListener('click', toggleFullscreen);
       el('saveRevealConfigBtn').addEventListener('click', () => saveRevealConfig('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
+      el('saveHostUsersBtn').addEventListener('click', async () => {
+        try {
+          const selected = Array.from(el('hostUsersSelect').selectedOptions || []).map((option) => option.value);
+          await hostAction('set_allowed_host_users', { user_ids: selected });
+          await bootstrapHost();
+          setNotice('hostNotice', 'Host users updated.', 'success');
+        } catch (err) {
+          setNotice('hostNotice', err.message, 'warning');
+        }
+      });
       el('applyThemePresetBtn').addEventListener('click', () => applyThemePreset('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
       el('saveCustomPresetBtn').addEventListener('click', () => saveCustomPreset('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
       el('exportPresetsBtn').addEventListener('click', () => exportPresets('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
