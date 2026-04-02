@@ -514,9 +514,10 @@ Compatibility handling currently covers legacy keys such as old theme fields, pr
 - Relaxed iframe host-panel API auth so the built-in iframe sidebar panel can bootstrap and manage the game in clients where Home Assistant auth is not forwarded into `/local` iframe requests. This is intended for trusted LAN use.
 
 
-## Recent updates
+## Judge Party mode
 
-- Host/admin controls are now restricted to authenticated Home Assistant admin sessions.
-- Card rounds now support a 2-player minimum.
-- Added a builtin **Judge Party** deck for black-card / white-card judge play.
-- AI deck generation now supports a judge-party style that creates original fill-in-the-blank prompts and short answer cards without copying commercial card text.
+This repo now includes a **Judge Party** mode: one player is the judge, everyone else plays one white card, submissions are shown anonymously, and the judge picks the winning card. It is an original party-game mode inspired by the general fill-in-the-blank format, without copying proprietary card text.
+
+### AI-generated judge decks
+
+The AI deck generator now supports a `judge_party` style that creates original black-card prompts and white-card answers for judge-style rounds. It can either save a new deck or append new cards into an existing deck.
