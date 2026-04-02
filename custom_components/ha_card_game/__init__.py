@@ -6,8 +6,9 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.exceptions import ConfigEntryError
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryError, HomeAssistantError
+from homeassistant.exceptions import HomeAssistantError
 
 from .api import async_register_api
 from .const import (
@@ -74,13 +75,10 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     coordinator: CardGameCoordinator | None = getattr(entry, "runtime_data", None)
     if coordinator is None:
         return
-
     panel_enabled = entry.options.get(CONF_ENABLE_PANEL, entry.data.get(CONF_ENABLE_PANEL, True))
     await coordinator.async_apply_options({**entry.data, **entry.options})
-
     if panel_enabled:
         await async_register_panel(hass)
-
     await async_sync_repairs(hass, entry, coordinator)
 
 
@@ -116,43 +114,13 @@ async def _async_register_services(hass: HomeAssistant, coordinator: CardGameCoo
     async def reload_decks(call: ServiceCall) -> None:
         await coordinator.async_reload_decks()
 
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_START_GAME,
-        start_game,
-        schema=vol.Schema({vol.Optional(SERVICE_DECK_NAME): str}),
-    )
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_ADD_PLAYER,
-        add_player,
-        schema=vol.Schema({vol.Required(SERVICE_PLAYER_NAME): str}),
-    )
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_SUBMIT_CARD,
-        submit_card,
-        schema=vol.Schema(
-            {
-                vol.Required(SERVICE_PLAYER_NAME): str,
-                vol.Required(SERVICE_CARD_TEXT): str,
-            }
-        ),
-    )
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_PICK_WINNER,
-        pick_winner,
-        schema=vol.Schema({vol.Required(SERVICE_PLAYER_NAME): str}),
-    )
+    hass.services.async_register(DOMAIN, SERVICE_START_GAME, start_game, schema=vol.Schema({vol.Optional(SERVICE_DECK_NAME): str}))
+    hass.services.async_register(DOMAIN, SERVICE_ADD_PLAYER, add_player, schema=vol.Schema({vol.Required(SERVICE_PLAYER_NAME): str}))
+    hass.services.async_register(DOMAIN, SERVICE_SUBMIT_CARD, submit_card, schema=vol.Schema({vol.Required(SERVICE_PLAYER_NAME): str, vol.Required(SERVICE_CARD_TEXT): str}))
+    hass.services.async_register(DOMAIN, SERVICE_PICK_WINNER, pick_winner, schema=vol.Schema({vol.Required(SERVICE_PLAYER_NAME): str}))
     hass.services.async_register(DOMAIN, SERVICE_NEXT_ROUND, next_round)
     hass.services.async_register(DOMAIN, SERVICE_RESET_GAME, reset_game)
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_SET_DECK,
-        set_deck,
-        schema=vol.Schema({vol.Required(SERVICE_DECK_NAME): str}),
-    )
+    hass.services.async_register(DOMAIN, SERVICE_SET_DECK, set_deck, schema=vol.Schema({vol.Required(SERVICE_DECK_NAME): str}))
     hass.services.async_register(DOMAIN, SERVICE_RELOAD_DECKS, reload_decks)
 
 

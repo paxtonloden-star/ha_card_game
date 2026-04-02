@@ -10,23 +10,15 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 
-PANEL_REGISTERED_KEY = f"{DOMAIN}_panel_registered"
-STATIC_REGISTERED_KEY = f"{DOMAIN}_static_registered"
-
 
 async def async_register_panel(hass: HomeAssistant) -> None:
-    """Register the panel only once."""
+    """Register a basic iframe panel pointing to the local HTML app."""
     panel_path = f"/local/{DOMAIN}/index.html"
+
     static_dir = Path(__file__).parent / "frontend"
-
-    if not hass.data.get(STATIC_REGISTERED_KEY):
-        await hass.http.async_register_static_paths(
-            [StaticPathConfig(f"/local/{DOMAIN}", str(static_dir), cache_headers=False)]
-        )
-        hass.data[STATIC_REGISTERED_KEY] = True
-
-    if hass.data.get(PANEL_REGISTERED_KEY):
-        return
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(f"/local/{DOMAIN}", str(static_dir), cache_headers=False)]
+    )
 
     async_register_built_in_panel(
         hass,
@@ -37,5 +29,3 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         config={"url": panel_path},
         require_admin=False,
     )
-
-    hass.data[PANEL_REGISTERED_KEY] = True
