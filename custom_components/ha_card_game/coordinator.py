@@ -471,6 +471,8 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         state = self.data.copy()
         state["join_code"] = self.join_code
         state["game_mode"] = self.game_mode
+        if self.game_mode == GAME_MODE_TRIVIA:
+            state["judge"] = None
         state["trivia"] = {
             **self.trivia.as_dict(),
             "team_mode": self.trivia_team_mode,
@@ -512,7 +514,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         state["qr_url"] = f"/api/{DOMAIN}/join_qr.svg"
         state["player_name"] = player_name
         state["is_joined"] = player_name is not None
-        state["is_judge"] = player_name is not None and player_name == self.engine.state.current_judge
+        state["is_judge"] = player_name is not None and self.game_mode != GAME_MODE_TRIVIA and player_name == self.engine.state.current_judge
         state["has_submitted"] = False
         state["hand"] = []
         state["team"] = None
@@ -660,7 +662,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.engine.state.winner_card = None
         self.engine.state.winner_submission_id = None
         self.engine.state.reveal_order = []
-        self.engine.clear_round_timer()
+        self.engine.set_round_timer(15, time.time() + 15)
         self.last_trivia_results = []
         self._reset_trivia_buzzer_state()
         for player in self.engine.state.players:
@@ -928,8 +930,8 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def join_url(self) -> str:
         if not self.base_url:
-            return f"/local/{DOMAIN}/index.modular.html?join={self.join_code}"
-        return f"{self.base_url}/local/{DOMAIN}/index.modular.html?join={self.join_code}"
+            return f"/local/{DOMAIN}/index.html?join={self.join_code}"
+        return f"{self.base_url}/local/{DOMAIN}/index.html?join={self.join_code}"
 
     async def async_register_socket(self, ws: web.WebSocketResponse) -> None:
         self._sockets.add(ws)
