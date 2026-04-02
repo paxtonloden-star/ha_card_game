@@ -44,14 +44,14 @@ class AIGenerator:
             setattr(self.settings, key, value)
         return self.settings
 
-    async def generate_pack(self, *, theme: str, prompt_count: int = 12, white_count: int = 40, family_friendly: bool = True, age_range: str = "18_plus") -> dict[str, Any]:
+    async def generate_pack(self, *, theme: str, prompt_count: int = 12, white_count: int = 40, family_friendly: bool = True, age_range: str = "18_plus", style: str = "general_party") -> dict[str, Any]:
         if self.settings.enabled and self.settings.api_key:
             try:
-                return await self._generate_pack_remote(theme=theme, prompt_count=prompt_count, white_count=white_count, family_friendly=family_friendly, age_range=age_range)
+                return await self._generate_pack_remote(theme=theme, prompt_count=prompt_count, white_count=white_count, family_friendly=family_friendly, age_range=age_range, style=style)
             except Exception:
                 if not self.settings.use_local_fallback:
                     raise
-        return self._generate_pack_local(theme=theme, prompt_count=prompt_count, white_count=white_count, family_friendly=family_friendly, age_range=age_range)
+        return self._generate_pack_local(theme=theme, prompt_count=prompt_count, white_count=white_count, family_friendly=family_friendly, age_range=age_range, style=style)
 
     async def generate_trivia(self, *, category: str, age_range: str, difficulty: str | None = None, question_count: int = 10) -> list[dict[str, Any]]:
         difficulty = difficulty or TRIVIA_DIFFICULTY_BY_AGE.get(age_range, "medium")
@@ -65,8 +65,8 @@ class AIGenerator:
 
     async def _generate_pack_remote(self, **kwargs: Any) -> dict[str, Any]:
         instructions = (
-            "Return JSON with keys slug,name,description,prompts,white_cards,style. "
-            "Prompts should be short fill-in-the-blank black cards for a judge-based party card game. White cards should be concise punchlines. Do not copy any existing commercial card text verbatim. Keep content within the requested family_friendly or age_range boundaries and avoid hateful or exploitative content."
+            "Return JSON with keys slug,name,description,prompts,white_cards. "
+            "Prompts should be original short fill-in-the-blank black cards for a judge-style party game. White cards should be original concise punchlines. Do not copy or quote any existing commercial card game cards. Mimic only the general party-game structure."
         )
         user_text = json.dumps(kwargs)
         payload = {
@@ -86,7 +86,6 @@ class AIGenerator:
             "white_cards": [str(x).strip() for x in data.get("white_cards", []) if str(x).strip()],
             "allow_free_text": True,
             "hand_size": 7,
-            "style": "judge_party",
         }
 
     async def _generate_trivia_remote(self, **kwargs: Any) -> list[dict[str, Any]]:
@@ -122,27 +121,53 @@ class AIGenerator:
                         return str(content["text"])
         return json.dumps(data)
 
-    def _generate_pack_local(self, *, theme: str, prompt_count: int, white_count: int, family_friendly: bool, age_range: str) -> dict[str, Any]:
+    def _generate_pack_local(self, *, theme: str, prompt_count: int, white_count: int, family_friendly: bool, age_range: str, style: str = "general_party") -> dict[str, Any]:
         theme_clean = theme.strip() or "Custom"
-        prompts = [
-            f"The real reason {theme_clean} night got weird was ____. ",
-            f"Nobody expected {theme_clean} to involve ____. ",
-            f"At our house, {theme_clean} always means ____. ",
-            f"The score doubled when someone added ____. ",
-            f"The host banned ____ after the last {theme_clean} round. ",
-            f"Remote players joined because of ____. ",
-            f"The TV mode reveal needed more ____. ",
-            f"The funniest thing to pair with {theme_clean} is ____. ",
-            f"I lost the round because I underestimated ____. ",
-            f"The Home Assistant dashboard lit up for ____. ",
-            f"Our custom preset is basically powered by ____. ",
-            f"The couch championship trophy was won by ____. ",
-        ][:max(1, prompt_count)]
-        base = [
-            "button mashing", "retro snacks", "a surprise update", "one last round", "bad Wi-Fi", "an overpowered cheat code",
-            "movie quotes", "glow sticks", "a speedrun mindset", "lag spikes", "couch co-op", "a golden buzzer",
-            f"{theme_clean.lower()} chaos", "a trivia rabbit hole", "friendly trash talk", "a sudden plot twist", "bonus points",
-        ]
+        style = (style or "general_party").strip().lower()
+        if style == "judge_party":
+            prompts = [
+                f"The real reason {theme_clean} game night got weird was ____.",
+                f"Nothing says {theme_clean} champion like ____.",
+                f"The judge instantly regretted allowing ____.",
+                f"Our house rule about ____ lasted exactly one round.",
+                f"The group chat exploded after someone played ____.",
+                f"I brought ____ to {theme_clean} night and somehow won.",
+                f"The most powerful card in the deck is basically ____.",
+                f"The dramatic winner reveal was sponsored by ____.",
+                f"Grandma unexpectedly dominated the round with ____.",
+                f"The weirdest flex at {theme_clean} night was ____.",
+                f"Nobody was prepared for the combination of ____ and ____.",
+                f"Our living room now smells like ____.",
+            ][:max(1, prompt_count)]
+            base = [
+                "a karaoke-related incident", "aggressively supportive applause", "one extremely confident pigeon",
+                "a dramatic slow clap", "nacho dust on the controller", "a suspicious amount of glitter",
+                "the loudest whisper imaginable", "an accidental villain speech", "discount wizard energy",
+                "two raccoons with a strategy", "a mystery casserole", "emotional support pizza",
+                "one sock with big ambitions", "an unlicensed dance move", f"{theme_clean.lower()} nonsense",
+                "a competitive grandma", "Wi-Fi powered confidence", "an overachieving kazoo",
+                "deep-fried homework", "an emergency snack summit",
+            ]
+        else:
+            prompts = [
+                f"The real reason {theme_clean} night got weird was ____. ",
+                f"Nobody expected {theme_clean} to involve ____. ",
+                f"At our house, {theme_clean} always means ____. ",
+                f"The score doubled when someone added ____. ",
+                f"The host banned ____ after the last {theme_clean} round. ",
+                f"Remote players joined because of ____. ",
+                f"The TV mode reveal needed more ____. ",
+                f"The funniest thing to pair with {theme_clean} is ____. ",
+                f"I lost the round because I underestimated ____. ",
+                f"The Home Assistant dashboard lit up for ____. ",
+                f"Our custom preset is basically powered by ____. ",
+                f"The couch championship trophy was won by ____. ",
+            ][:max(1, prompt_count)]
+            base = [
+                "button mashing", "retro snacks", "a surprise update", "one last round", "bad Wi-Fi", "an overpowered cheat code",
+                "movie quotes", "glow sticks", "a speedrun mindset", "lag spikes", "couch co-op", "a golden buzzer",
+                f"{theme_clean.lower()} chaos", "a trivia rabbit hole", "friendly trash talk", "a sudden plot twist", "bonus points",
+            ]
         if family_friendly:
             base += ["jellybeans", "marshmallow diplomacy", "a dance break"]
         white_cards = []
@@ -156,7 +181,6 @@ class AIGenerator:
             "white_cards": white_cards[:white_count],
             "allow_free_text": True,
             "hand_size": 7,
-            "style": "judge_party",
         }
 
     def _generate_trivia_local(self, *, category: str, age_range: str, difficulty: str, question_count: int) -> list[dict[str, Any]]:

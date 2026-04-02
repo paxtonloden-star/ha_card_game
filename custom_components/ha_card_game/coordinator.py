@@ -15,7 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import ADMIN_TOKEN_LENGTH, AI_QUEUE_MAX_ITEMS, CONF_AI_API_KEY, CONF_AI_ENABLED, CONF_AI_ENDPOINT, CONF_AI_MODEL, CONF_AI_USE_LOCAL_FALLBACK, CONF_ALLOW_REMOTE_PLAYERS, CONF_ALLOWED_TRIVIA_CATEGORIES, CONF_CONTENT_MODE, CONF_DEFAULT_GAME_MODE, CONF_DEFAULT_TRIVIA_SOURCE, CONF_MAX_ROUNDS, CONF_REMOTE_BASE_URL, CONF_REQUIRE_AI_APPROVAL, DEFAULT_AUTO_ADVANCE_ENABLED, DEFAULT_AUTO_ADVANCE_SECONDS, DEFAULT_DECK, DEFAULT_FLIP_STYLE, DEFAULT_PARENTAL_CONTROLS, DEFAULT_REMOTE_BASE_URL, DEFAULT_REVEAL_DURATION_MS, DEFAULT_REVEAL_SOUND, DEFAULT_SUBMISSION_REVEAL_ENABLED, DEFAULT_SUBMISSION_REVEAL_STEP_MS, DEFAULT_TICK_SOUND_PACK, DEFAULT_THEME_PRESET, DOMAIN, JOIN_CODE_LENGTH, PLAYER_TOKEN_LENGTH, STORAGE_KEY, STORAGE_VERSION, WS_EVENT_STATE, GAME_MODE_CARDS, GAME_MODE_TRIVIA, TRIVIA_DIFFICULTY_BY_AGE, TRIVIA_CATEGORIES
+from .const import ADMIN_TOKEN_LENGTH, AI_QUEUE_MAX_ITEMS, CONF_AI_API_KEY, CONF_AI_ENABLED, CONF_AI_ENDPOINT, CONF_AI_MODEL, CONF_AI_USE_LOCAL_FALLBACK, CONF_ALLOW_REMOTE_PLAYERS, CONF_ALLOWED_TRIVIA_CATEGORIES, CONF_CONTENT_MODE, CONF_DEFAULT_GAME_MODE, CONF_DEFAULT_TRIVIA_SOURCE, CONF_MAX_ROUNDS, CONF_REMOTE_BASE_URL, CONF_REQUIRE_AI_APPROVAL, DEFAULT_AUTO_ADVANCE_ENABLED, DEFAULT_AUTO_ADVANCE_SECONDS, DEFAULT_DECK, DEFAULT_FLIP_STYLE, DEFAULT_PARENTAL_CONTROLS, DEFAULT_REMOTE_BASE_URL, DEFAULT_REVEAL_DURATION_MS, DEFAULT_REVEAL_SOUND, DEFAULT_SUBMISSION_REVEAL_ENABLED, DEFAULT_SUBMISSION_REVEAL_STEP_MS, DEFAULT_TICK_SOUND_PACK, DEFAULT_THEME_PRESET, DOMAIN, JOIN_CODE_LENGTH, PLAYER_TOKEN_LENGTH, STORAGE_KEY, STORAGE_VERSION, WS_EVENT_STATE, GAME_MODE_CARDS, GAME_MODE_JUDGE_PARTY, GAME_MODE_TRIVIA, TRIVIA_DIFFICULTY_BY_AGE, TRIVIA_CATEGORIES
 from .deck_manager import DeckManager
 from .game_engine import CardGameEngine, GameState, Player
 from .ai_generator import AIGenerator, AISettings
@@ -254,6 +254,8 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if self.game_mode == GAME_MODE_TRIVIA:
             await self.async_start_trivia_round()
             return
+        if self.game_mode == GAME_MODE_JUDGE_PARTY and not deck_name:
+            deck_name = "party_judge_original"
         deck = self.deck_manager.get_deck(deck_name or self.engine.state.deck_name)
         self.engine.start_game(
             deck_name=deck.slug,
@@ -440,7 +442,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         state["remote_join_url"] = self.join_url
         state["remote_enabled"] = bool(self.base_url)
-        state["ai"] = self.ai_generator.settings.as_dict()
+        state["ai"] = {**self.ai_generator.settings.as_dict(), "pack_style_options": ["general_party", "judge_party"]}
         state["profiles"] = self._profiles_summary()
         state["scene_media"] = dict(self.scene_media_config)
         state["tournament"] = self._tournament_state()
@@ -542,8 +544,8 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.ai_generator.update_settings(enabled=enabled, endpoint=endpoint, model=model, api_key=api_key, use_local_fallback=use_local_fallback)
         await self.async_refresh_from_engine()
 
-    async def async_generate_ai_deck(self, *, theme: str, prompt_count: int = 12, white_count: int = 40, age_range: str = "18_plus", family_friendly: bool = True, merge_into_slug: str | None = None) -> dict[str, Any]:
-        payload = await self.ai_generator.generate_pack(theme=theme, prompt_count=prompt_count, white_count=white_count, family_friendly=family_friendly, age_range=age_range)
+    async def async_generate_ai_deck(self, *, theme: str, prompt_count: int = 12, white_count: int = 40, age_range: str = "18_plus", family_friendly: bool = True, merge_into_slug: str | None = None, style: str = "general_party") -> dict[str, Any]:
+        payload = await self.ai_generator.generate_pack(theme=theme, prompt_count=prompt_count, white_count=white_count, family_friendly=family_friendly, age_range=age_range, style=style)
         moderation = moderate_deck_payload(payload, content_mode=self.parental_controls.get("content_mode", "family_safe")) if self.parental_controls.get("enabled") else payload
         cleaned_payload = dict(moderation)
         moderation_meta = cleaned_payload.pop("moderation", {"issues": []})
