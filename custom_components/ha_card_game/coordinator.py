@@ -929,7 +929,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def join_url(self) -> str:
         if not self.base_url:
             return f"/local/{DOMAIN}/index.modular.html?join={self.join_code}"
-        return f"{self.base_url}/local/{DOMAIN}/index.modular.hrml?join={self.join_code}"
+        return f"{self.base_url}/local/{DOMAIN}/index.modular.html?join={self.join_code}"
 
     async def async_register_socket(self, ws: web.WebSocketResponse) -> None:
         self._sockets.add(ws)
