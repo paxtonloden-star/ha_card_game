@@ -1,0 +1,1892 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HA Card Game</title>
+    <link rel="stylesheet" href="/local/ha_card_game/styles.css" />
+  </head>
+  <body>
+    <main class="container" id="appRoot">
+      <header class="hero" id="standardHero">
+        <div>
+          <div class="eyebrow">HA Card Game</div>
+          <h1><span id="activeInstanceNameLabel">Live room</span></h1>
+          <p class="muted">Host controls for Home Assistant plus the same mobile player and judge flow.</p>
+        </div>
+        <div class="pill-row">
+          <span class="badge" id="connectionBadge">Connecting…</span>
+          <span class="badge" id="hostBadge">Host UI: checking…</span>
+          <span class="badge" id="stateBadge">idle</span>
+          <span class="badge" id="roundBadge">Round 0</span>
+          <span class="badge" id="judgeBadge">Judge: —</span>
+        </div>
+        <div class="hero-scoreboard" id="topScoreboard"></div>
+      </header>
+
+      <div class="layout three-col" id="standardLayout">
+        <section class="card host-panel host-only">
+          <h2>Host controls</h2>
+          <div id="hostNotice" class="notice hidden"></div>
+          <div id="hostLocked" class="muted">Open this page from the Home Assistant sidebar to manage the room. If host controls stay locked, refresh the page after signing into Home Assistant again.</div>
+
+          <div id="hostControls" class="hidden">
+            <div class="control-grid">
+              <div>
+                <label class="label" for="deckSelect">Deck</label>
+                <select id="deckSelect"></select>
+                <div id="deckDescription" class="muted"></div>
+              </div>
+              <div>
+                <label class="label" for="selectedDeckMode">Deck mode</label>
+                <input id="selectedDeckMode" readonly />
+              </div>
+            </div>
+
+            <div class="timer-block">
+              <div>
+                <label class="label" for="timerSecondsInput">Round timer</label>
+                <input id="timerSecondsInput" type="number" min="5" step="5" value="15" />
+              </div>
+              <div class="actions wrap">
+                <button class="secondary" id="setTimerBtn">Start timer</button>
+                <button class="secondary" id="clearTimerBtn">Clear timer</button>
+                <button class="secondary" id="openTvBtn">Open TV mode</button>
+                <button class="secondary" id="toggleFullscreenBtn">Fullscreen</button>
+              </div>
+            </div>
+
+            <div class="actions wrap">
+              <button id="hostStartBtn">Start game</button>
+              <button class="secondary" id="hostNextBtn">Next round</button>
+              <button class="secondary" id="hostReloadDecksBtn">Reload decks</button>
+              <button class="danger" id="hostResetBtn">Reset lobby</button>
+            </div>
+
+            <div class="reveal-settings" style="margin-top:12px;">
+              <h3>Host access</h3>
+              <p class="muted">Choose which Home Assistant users can open host controls. When no users are selected, any HA admin can host.</p>
+              <label class="label" for="hostUsersSelect">Allowed host users</label>
+              <select id="hostUsersSelect" multiple size="6"></select>
+              <div class="actions wrap" style="margin-top:12px;">
+                <button class="secondary" id="saveHostUsersBtn">Save host users</button>
+              </div>
+            </div>
+
+            <div class="reveal-settings" style="margin-top:12px;" id="instanceManager">
+              <h3>Game instances</h3>
+              <p class="muted">Create and switch between saved game rooms inside this one integration. The currently selected room is the active room for the sidebar and public join flow.</p>
+              <div class="control-grid">
+                <div>
+                  <label class="label" for="instanceSelect">Active room</label>
+                  <select id="instanceSelect"></select>
+                </div>
+                <div>
+                  <label class="label" for="newInstanceNameInput">New room name</label>
+                  <input id="newInstanceNameInput" placeholder="Movie Night" />
+                </div>
+              </div>
+              <div class="actions wrap" style="margin-top:12px;">
+                <button class="secondary" id="selectInstanceBtn">Switch room</button>
+                <button class="secondary" id="createInstanceBtn">Create room</button>
+                <button class="danger" id="deleteInstanceBtn">Delete selected room</button>
+              </div>
+            </div>
+
+            <div class="control-grid preset-manager-grid" style="margin-top:12px;">
+              <div>
+                <label class="label" for="deckImportModeSelect">Deck import mode</label>
+                <select id="deckImportModeSelect">
+                  <option value="merge">Merge</option>
+                  <option value="replace">Replace</option>
+                </select>
+              </div>
+              <div>
+                <label class="label" for="deckImportFileInput">Import deck pack JSON</label>
+                <input id="deckImportFileInput" type="file" accept="application/json,.json" />
+              </div>
+            </div>
+            <div class="actions wrap" style="margin-top:12px;">
+              <button class="secondary" id="exportDecksBtn">Export deck packs</button>
+              <button class="secondary" id="importDecksBtn">Import deck packs</button>
+            </div>
+
+            <div class="reveal-settings">
+              <h3>Reveal system</h3>
+              <div class="preset-block">
+                <div>
+                  <label class="label" for="themePresetSelect">Theme preset</label>
+                  <select id="themePresetSelect"></select>
+                  <div id="themePresetDescription" class="muted"></div>
+                </div>
+                <div class="actions wrap">
+                  <button class="secondary" id="applyThemePresetBtn">Apply preset</button>
+                  <button class="secondary" id="deleteThemePresetBtn">Delete custom preset</button>
+                </div>
+              </div>
+              <div class="control-grid preset-manager-grid">
+                <div>
+                  <label class="label" for="customPresetNameInput">Save current settings as preset</label>
+                  <input id="customPresetNameInput" placeholder="Movie Night" />
+                </div>
+                <div>
+                  <label class="label" for="customPresetDescriptionInput">Preset description</label>
+                  <input id="customPresetDescriptionInput" placeholder="Warm colors and dramatic pacing" />
+                </div>
+              </div>
+              <div class="actions wrap" style="margin-top:12px;">
+                <button class="secondary" id="saveCustomPresetBtn">Save custom preset</button>
+              </div>
+              <div class="control-grid preset-manager-grid" style="margin-top:12px;">
+                <div>
+                  <label class="label" for="presetImportModeSelect">Preset import mode</label>
+                  <select id="presetImportModeSelect">
+                    <option value="merge">Merge</option>
+                    <option value="replace">Replace</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="label" for="presetImportFileInput">Import preset JSON</label>
+                  <input id="presetImportFileInput" type="file" accept="application/json,.json" />
+                </div>
+              </div>
+              <div class="actions wrap" style="margin-top:12px;">
+                <button class="secondary" id="exportPresetsBtn">Export presets</button>
+                <button class="secondary" id="importPresetsBtn">Import presets</button>
+              </div>
+              <div class="control-grid">
+                <div>
+                  <label class="label" for="revealDurationInput">Reveal duration (ms)</label>
+                  <input id="revealDurationInput" type="number" min="1000" step="250" value="6500" />
+                </div>
+                <div>
+                  <label class="label" for="revealSoundSelect">Reveal sound</label>
+                  <select id="revealSoundSelect"></select>
+                </div>
+                <div>
+                  <label class="label" for="autoAdvanceSecondsInput">Auto-advance (sec)</label>
+                  <input id="autoAdvanceSecondsInput" type="number" min="0" step="1" value="8" />
+                </div>
+                <div>
+                  <label class="label" for="autoAdvanceEnabledInput">Auto-advance</label>
+                  <select id="autoAdvanceEnabledInput">
+                    <option value="false">Off</option>
+                    <option value="true">On</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="label" for="submissionRevealEnabledInput">Submission reveal</label>
+                  <select id="submissionRevealEnabledInput">
+                    <option value="true">On</option>
+                    <option value="false">Off</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="label" for="submissionRevealStepMsInput">Reveal step (ms)</label>
+                  <input id="submissionRevealStepMsInput" type="number" min="500" step="100" value="1800" />
+                </div>
+                <div>
+                  <label class="label" for="flipStyleSelect">Flip style</label>
+                  <select id="flipStyleSelect"></select>
+                </div>
+                <div>
+                  <label class="label" for="tickSoundPackSelect">Tick sound pack</label>
+                  <select id="tickSoundPackSelect"></select>
+                </div>
+              </div>
+              <div class="actions wrap" style="margin-top:12px;">
+                <button class="secondary" id="saveRevealConfigBtn">Save reveal settings</button>
+              </div>
+            </div>
+
+            <h3>Players</h3>
+            <div class="players" id="playersList"></div>
+          </div>
+        </section>
+
+        <section class="card room-panel" id="roomPanel">
+          <h2>Room</h2>
+          <div class="room-code" id="joinCodeTop">------</div>
+          <p class="muted">Players scan the QR code or open the join URL.</p>
+
+          <div class="qr-layout">
+            <img id="qrImage" alt="Join QR" />
+            <div>
+              <div class="label">Join code</div>
+              <div class="room-code large" id="joinCodeMain">------</div>
+              <label class="label" for="joinUrl">Join URL</label>
+              <input id="joinUrl" readonly />
+              <div class="actions">
+                <button class="secondary" id="copyJoinBtn">Copy link</button>
+              </div>
+              <div class="notice" style="margin-top:12px;">
+                Public player access is still designed for trusted home LAN use.
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top:16px;">
+            <div class="label">Current prompt</div>
+            <div class="prompt-box compact" id="promptText">Waiting for the next round…</div>
+          </div>
+        </section>
+
+        <section class="card" id="playerView">
+          <h2 id="playerHeading">Player</h2>
+          <div id="playerNotice" class="notice hidden"></div>
+
+          <div id="joinPanel">
+            <p class="muted">Join this room from your phone.</p>
+            <input id="playerNameInput" placeholder="Leave blank to use your Home Assistant name" />
+            <div class="actions">
+              <button id="joinBtn">Join game</button>
+            </div>
+          </div>
+
+          <div id="activePlayerPanel" class="hidden">
+            <div id="submitPanel">
+              <div class="label">Your hand</div>
+              <div class="hand" id="handList"></div>
+              <label for="cardText" class="muted">Manual answer</label>
+              <textarea id="cardText" placeholder="Enter your funniest white card..."></textarea>
+              <div class="actions">
+                <button class="secondary" id="buzzBtn">Buzz in first</button>
+                <button id="submitBtn">Submit card</button>
+              </div>
+            </div>
+
+            <div id="judgePanel" class="hidden">
+              <div class="notice">You are the judge this round. Pick the best anonymous answer.</div>
+              <div class="submissions" id="judgeSubmissions"></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="card" style="margin-top:16px;" id="standardScoreboardCard">
+        <h2>Scoreboard</h2>
+        <div class="scoreboard" id="scoreboard"></div>
+      </section>
+
+      <section class="tv-shell hidden" id="tvShell">
+        <div class="tv-backdrop"></div>
+        <div class="tv-topbar">
+          <div class="tv-brand">
+            <span class="eyebrow">HA Card Game</span>
+            <strong id="tvStateLabel">Lobby</strong>
+          </div>
+          <div class="tv-badges">
+            <span class="badge badge-xl" id="tvRoundBadge">Round 0</span>
+            <span class="badge badge-xl" id="tvJudgeBadge">Judge: —</span>
+            <span class="badge badge-xl timer-badge" id="tvTimerBadge">No timer</span>
+          </div>
+        </div>
+
+        <div class="tv-main">
+          <section class="tv-prompt-card">
+            <div class="tv-prompt-meta">
+              <div>
+                <div class="label">Current prompt</div>
+                <div class="tv-join-code" id="tvJoinCode">------</div>
+              </div>
+              <div class="tv-qr-box">
+                <img id="tvQrImage" alt="Join QR" />
+                <div class="tv-qr-text">
+                  <div class="label">Scan to join</div>
+                  <div class="muted" id="tvJoinUrlText">—</div>
+                </div>
+              </div>
+            </div>
+            <div class="tv-prompt" id="tvPromptText">Waiting for the next round…</div>
+          </section>
+
+          <section class="tv-side-column">
+            <div class="tv-panel">
+              <div class="label">Players</div>
+              <div class="tv-player-list" id="tvPlayers"></div>
+            </div>
+            <div class="tv-panel">
+              <div class="label">Scores</div>
+              <div class="tv-score-list" id="tvScoreboard"></div>
+            </div>
+            <div class="tv-panel hidden" id="tvHostPanel">
+              <div class="label">Host controls</div>
+              <div id="tvHostNotice" class="notice hidden"></div>
+              <div class="tv-host-actions">
+                <input id="tvTimerSecondsInput" type="number" min="5" step="5" value="15" />
+                <button class="secondary" id="tvStartTimerBtn">Timer</button>
+                <button class="secondary" id="tvClearTimerBtn">Clear</button>
+                <button id="tvNextRoundBtn">Next round</button>
+                <button class="secondary" id="tvExitModeBtn">Exit TV mode</button>
+              </div>
+              <div class="tv-reveal-controls">
+                <select id="tvThemePresetSelect"></select>
+                <button class="secondary" id="tvApplyThemePresetBtn">Apply preset</button>
+                <button class="secondary" id="tvDeleteThemePresetBtn">Delete custom</button>
+                <input id="tvCustomPresetNameInput" placeholder="Save preset name" />
+                <input id="tvCustomPresetDescriptionInput" placeholder="Preset description" />
+                <button class="secondary" id="tvSaveCustomPresetBtn">Save custom</button>
+                <select id="tvPresetImportModeSelect">
+                  <option value="merge">Merge import</option>
+                  <option value="replace">Replace import</option>
+                </select>
+                <input id="tvPresetImportFileInput" type="file" accept="application/json,.json" />
+                <button class="secondary" id="tvExportPresetsBtn">Export presets</button>
+                <button class="secondary" id="tvImportPresetsBtn">Import presets</button>
+                <button class="secondary" id="tvExportDecksBtn">Export decks</button>
+                <button class="secondary" id="tvImportDecksBtn">Import decks</button>
+                <div id="tvThemePresetDescription" class="muted" style="grid-column:1 / -1;"></div>
+                <select id="tvRevealSoundSelect"></select>
+                <input id="tvRevealDurationInput" type="number" min="1000" step="250" value="6500" />
+                <input id="tvAutoAdvanceSecondsInput" type="number" min="0" step="1" value="8" />
+                <select id="tvAutoAdvanceEnabledInput">
+                  <option value="false">Auto off</option>
+                  <option value="true">Auto on</option>
+                </select>
+                <select id="tvSubmissionRevealEnabledInput">
+                  <option value="true">Reveal on</option>
+                  <option value="false">Reveal off</option>
+                </select>
+                <input id="tvSubmissionRevealStepMsInput" type="number" min="500" step="100" value="1800" />
+                <select id="tvFlipStyleSelect"></select>
+                <select id="tvTickSoundPackSelect"></select>
+                <button class="secondary" id="tvSaveRevealConfigBtn">Save reveal</button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="tv-submission-strip hidden" id="tvSubmissionStrip"></div>
+        <div class="tv-footer" id="tvFooterText">Waiting in the lobby for players to join.</div>
+        <div class="winner-overlay hidden" id="winnerOverlay">
+          <div class="winner-card" id="winnerCardFrame">
+            <div class="sequence-stage hidden" id="submissionSequenceStage">
+              <div class="eyebrow">Submission reveal</div>
+              <div class="sequence-count" id="sequenceCount">Submission 1</div>
+              <div class="sequence-flip-wrap">
+                <div class="sequence-flip-card" id="sequenceFlipCard">
+                  <div class="sequence-face sequence-face-front">
+                    <div class="sequence-card-label" id="sequenceCardLabel">Anonymous card</div>
+                    <div class="sequence-answer" id="sequenceAnswer">—</div>
+                  </div>
+                  <div class="sequence-face sequence-face-back">
+                    <div class="sequence-card-back-inner">
+                      <div class="sequence-back-mark">HA</div>
+                      <div class="sequence-back-text">Reveal</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="winner-meta-row">
+                <span class="badge badge-xl" id="sequenceProgress">1 / 1</span>
+                <span class="badge badge-xl" id="sequenceModeLabel">Anonymous reveal</span>
+              </div>
+            </div>
+            <div class="winner-stage" id="winnerStage">
+              <div class="eyebrow">Round winner</div>
+              <div class="winner-name" id="winnerName">—</div>
+              <div class="winner-answer" id="winnerAnswer">—</div>
+              <div class="winner-meta-row">
+                <span class="badge badge-xl" id="winnerThemeLabel">Theme</span>
+                <span class="badge badge-xl" id="winnerCountdown">Next round in —</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const storageKey = 'ha_card_game_session';
+      const url = new URL(window.location.href);
+      const joinCodeFromUrl = (url.searchParams.get('join') || '').toUpperCase();
+      const modeFromUrl = (url.searchParams.get('mode') || '').toLowerCase();
+      const tokenFromUrl = (url.searchParams.get('token') || '').trim();
+      const nameFromUrl = (url.searchParams.get('name') || '').trim();
+      let session = JSON.parse(localStorage.getItem(storageKey) || 'null');
+      if (tokenFromUrl) { persistTemp = { player_name: nameFromUrl || (session && session.player_name) || '', session_token: tokenFromUrl }; localStorage.setItem(storageKey, JSON.stringify(persistTemp)); session = persistTemp; }
+      let latestState = null;
+      let latestHost = null;
+      let ws = null;
+      let reconnectTimer = null;
+      let hostEnabled = false;
+      let countdownTimer = null;
+      let previousWinner = null;
+      let revealOverlayTimer = null;
+      let revealAudioContext = null;
+      let revealCountdownTimer = null;
+      let submissionSequenceTimer = null;
+      let submissionFlipMidTimer = null;
+      let submissionFlipEndTimer = null;
+
+      const el = (id) => document.getElementById(id);
+      const show = (node, visible) => node.classList.toggle('hidden', !visible);
+      const isTvMode = () => modeFromUrl === 'tv';
+      const isDirectPlayerLink = () => !!(joinCodeFromUrl || tokenFromUrl);
+
+      function persistSession(data) {
+        session = data;
+        localStorage.setItem(storageKey, JSON.stringify(data));
+      }
+
+      function findParentHass() {
+        try {
+          if (window.parent && window.parent !== window) {
+            const roots = window.parent.document.querySelectorAll('home-assistant, hc-main, home-assistant-main');
+            for (const root of roots) {
+              if (root && root.hass) return root.hass;
+              if (root && root.__data && root.__data.hass) return root.__data.hass;
+            }
+            const first = window.parent.document.querySelector('home-assistant');
+            if (first && first.hass) return first.hass;
+          }
+        } catch (_err) {
+          // Cross-frame access can fail in some contexts; fall back below.
+        }
+        return null;
+      }
+
+      function getBearerToken() {
+        try {
+          const parentHass = findParentHass();
+          const token = parentHass?.auth?.data?.accessToken;
+          if (token) return token;
+        } catch (_err) {}
+
+        try {
+          const raw = window.localStorage.getItem('hassTokens');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed?.access_token) return parsed.access_token;
+          }
+        } catch (_err) {}
+
+        return null;
+      }
+
+      async function api(path, method = 'GET', body = null) {
+        const options = { method, headers: {} };
+        if (body) {
+          options.headers['Content-Type'] = 'application/json';
+          options.body = JSON.stringify(body);
+        }
+        options.credentials = 'same-origin';
+
+        const token = getBearerToken();
+        if (token) {
+          options.headers['Authorization'] = 'Bearer ' + token;
+        }
+
+        const response = await fetch(path, options);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || data.ok === false) {
+          throw new Error(data.error || 'Request failed');
+        }
+        return data;
+      }
+
+      function setConnection(text, ok = true) {
+        const badge = el('connectionBadge');
+        badge.textContent = text;
+        badge.className = 'badge' + (ok ? '' : ' warning');
+      }
+
+      function setNotice(targetId, message, type = '') {
+        const node = el(targetId);
+        if (!node) return;
+        node.textContent = message || '';
+        node.className = 'notice' + (type ? ' ' + type : '') + (message ? '' : ' hidden');
+      }
+
+      function escapeAttr(value) {
+        return String(value)
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
+      function formatJoinUrl(value) {
+        if (!value) return '—';
+        try {
+          const parsed = new URL(value, window.location.origin);
+          return parsed.host + parsed.pathname + parsed.search;
+        } catch (_err) {
+          return value;
+        }
+      }
+
+      function describeState(state) {
+        if (state.state === 'lobby' || state.state === 'idle') return 'Waiting in the lobby for players to join.';
+        if (state.state === 'submitting') return 'Players are choosing their best card.';
+        if (state.state === 'judging') return 'Judge is reading anonymous submissions.';
+        if (state.state === 'results') return state.winner ? `${state.winner} wins this round.` : 'Round complete.';
+        return state.state;
+      }
+
+      function escapeHtml(value) {
+        return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+      }
+
+      function applyTheme(state) {
+        const theme = state.theme || {};
+        const root = document.documentElement;
+        root.style.setProperty('--theme-accent', theme.accent || '#7c9cff');
+        root.style.setProperty('--theme-accent-soft', theme.accent_soft || 'rgba(124, 156, 255, .22)');
+        root.style.setProperty('--theme-background', theme.background || 'radial-gradient(circle at top, rgba(58,86,165,.55), rgba(10,14,24,.96) 58%)');
+        root.style.setProperty('--theme-winner-background', theme.winner_background || 'linear-gradient(135deg, #203271, #172641 62%, #18344d)');
+        document.body.dataset.theme = theme.slug || 'midnight_arcade';
+        const themeLabel = el('winnerThemeLabel');
+        if (themeLabel) themeLabel.textContent = theme.name || 'Round theme';
+      }
+
+      function refreshLayoutByContext() {
+        const roomPanel = el('roomPanel');
+        if (roomPanel) {
+          show(roomPanel, !isTvMode() && !isDirectPlayerLink());
+        }
+      }
+
+      function renderHostUsers(host) {
+        const select = el('hostUsersSelect');
+        const instanceSelect = el('instanceSelect');
+        const users = Array.isArray(host?.available_host_users) ? host.available_host_users : [];
+        const selectedIds = new Set(Array.isArray(host?.allowed_host_user_ids) ? host.allowed_host_user_ids : []);
+        if (select) {
+          select.innerHTML = users.map((user) => {
+            const label = `${escapeHtml(user.name)}${user.is_admin ? ' (admin)' : ''}${user.is_active === false ? ' [inactive]' : ''}`;
+            return `<option value="${escapeAttr(user.id)}"${selectedIds.has(user.id) ? ' selected' : ''}>${label}</option>`;
+          }).join('');
+        }
+        if (instanceSelect) {
+          const instances = Array.isArray(host?.instances) ? host.instances : (latestState?.instances || []);
+          const activeId = host?.active_instance_id || latestState?.active_instance_id || '';
+          instanceSelect.innerHTML = instances.map((item) => `<option value="${escapeAttr(item.id)}"${item.id === activeId ? ' selected' : ''}>${escapeHtml(item.name)} · ${escapeHtml(item.game_mode || 'cards')} · ${item.player_count || 0} players</option>`).join('');
+        }
+        renderPlayerUserLinks(users);
+      }
+
+      function renderPlayerUserLinks(users) {
+        const list = el('playersList');
+        if (!list || !hostEnabled) return;
+        list.querySelectorAll('[data-player-user-select]').forEach((select) => {
+          const playerName = select.dataset.playerUserSelect;
+          const currentUser = latestState?.player_user_links?.[playerName] || '';
+          select.innerHTML = `<option value="">No linked HA user</option>` + users.map((user) => `<option value="${escapeAttr(user.id)}"${user.id === currentUser ? ' selected' : ''}>${escapeHtml(user.name)}</option>`).join('');
+          select.addEventListener('change', async () => {
+            try {
+              await hostAction('link_player_user', { player_name: playerName, user_id: select.value || '' });
+              setNotice('hostNotice', `Updated linked user for ${playerName}.`, 'success');
+            } catch (err) {
+              setNotice('hostNotice', err.message, 'warning');
+            }
+          });
+        });
+      }
+
+      function populateRevealControls(state) {
+        const reveal = state.reveal || {};
+        const soundOptions = reveal.sound_options || ['off', 'victory_chime'];
+        const flipStyleOptions = reveal.flip_style_options || ['arcade_flip'];
+        const tickSoundPackOptions = reveal.tick_sound_pack_options || ['arcade_ticks'];
+        const presetOptions = reveal.theme_preset_options || [];
+        const hostSelect = el('revealSoundSelect');
+        const tvSelect = el('tvRevealSoundSelect');
+        const soundMarkup = soundOptions.map((sound) => `<option value="${escapeAttr(sound)}">${sound.replaceAll('_', ' ')}</option>`).join('');
+        const flipMarkup = flipStyleOptions.map((style) => `<option value="${escapeAttr(style)}">${style.replaceAll('_', ' ')}</option>`).join('');
+        const tickMarkup = tickSoundPackOptions.map((pack) => `<option value="${escapeAttr(pack)}">${pack.replaceAll('_', ' ')}</option>`).join('');
+        const presetMarkup = presetOptions.map((preset) => `<option value="${escapeAttr(preset.slug)}">${escapeHtml(preset.name)}</option>`).join('');
+        if (hostSelect) hostSelect.innerHTML = soundMarkup;
+        if (tvSelect) tvSelect.innerHTML = soundMarkup;
+        if (el('flipStyleSelect')) el('flipStyleSelect').innerHTML = flipMarkup;
+        if (el('tvFlipStyleSelect')) el('tvFlipStyleSelect').innerHTML = flipMarkup;
+        if (el('tickSoundPackSelect')) el('tickSoundPackSelect').innerHTML = tickMarkup;
+        if (el('tvTickSoundPackSelect')) el('tvTickSoundPackSelect').innerHTML = tickMarkup;
+        if (el('themePresetSelect')) el('themePresetSelect').innerHTML = presetMarkup;
+        if (el('tvThemePresetSelect')) el('tvThemePresetSelect').innerHTML = presetMarkup;
+        if (hostSelect) hostSelect.value = reveal.sound || 'victory_chime';
+        if (tvSelect) tvSelect.value = reveal.sound || 'victory_chime';
+        if (el('flipStyleSelect')) el('flipStyleSelect').value = reveal.flip_style || 'arcade_flip';
+        if (el('tvFlipStyleSelect')) el('tvFlipStyleSelect').value = reveal.flip_style || 'arcade_flip';
+        if (el('tickSoundPackSelect')) el('tickSoundPackSelect').value = reveal.tick_sound_pack || 'arcade_ticks';
+        if (el('tvTickSoundPackSelect')) el('tvTickSoundPackSelect').value = reveal.tick_sound_pack || 'arcade_ticks';
+        if (el('themePresetSelect')) el('themePresetSelect').value = reveal.theme_preset || 'custom';
+        if (el('tvThemePresetSelect')) el('tvThemePresetSelect').value = reveal.theme_preset || 'custom';
+        const preset = presetOptions.find((item) => item.slug === (reveal.theme_preset || 'custom'));
+        if (el('themePresetDescription')) el('themePresetDescription').textContent = preset?.description || 'Manual reveal/theme mix.';
+        if (el('tvThemePresetDescription')) el('tvThemePresetDescription').textContent = preset?.description || 'Manual reveal/theme mix.';
+        if (el('revealDurationInput')) el('revealDurationInput').value = reveal.duration_ms || 6500;
+        if (el('tvRevealDurationInput')) el('tvRevealDurationInput').value = reveal.duration_ms || 6500;
+        if (el('autoAdvanceSecondsInput')) el('autoAdvanceSecondsInput').value = reveal.auto_advance_seconds || 0;
+        if (el('tvAutoAdvanceSecondsInput')) el('tvAutoAdvanceSecondsInput').value = reveal.auto_advance_seconds || 0;
+        if (el('autoAdvanceEnabledInput')) el('autoAdvanceEnabledInput').value = String(!!reveal.auto_advance_enabled);
+        if (el('tvAutoAdvanceEnabledInput')) el('tvAutoAdvanceEnabledInput').value = String(!!reveal.auto_advance_enabled);
+        if (el('submissionRevealEnabledInput')) el('submissionRevealEnabledInput').value = String(reveal.submission_reveal_enabled !== false);
+        if (el('tvSubmissionRevealEnabledInput')) el('tvSubmissionRevealEnabledInput').value = String(reveal.submission_reveal_enabled !== false);
+        if (el('submissionRevealStepMsInput')) el('submissionRevealStepMsInput').value = reveal.submission_reveal_step_ms || 1800;
+        if (el('tvSubmissionRevealStepMsInput')) el('tvSubmissionRevealStepMsInput').value = reveal.submission_reveal_step_ms || 1800;
+      }
+
+      function ensureAudioContext() {
+        if (!revealAudioContext) {
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          if (Ctx) revealAudioContext = new Ctx();
+        }
+        if (revealAudioContext?.state === 'suspended') revealAudioContext.resume().catch(() => {});
+        return revealAudioContext;
+      }
+
+      function playTone(ctx, frequency, start, duration, type = 'sine', gain = 0.08) {
+        const osc = ctx.createOscillator();
+        const amp = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(frequency, start);
+        amp.gain.setValueAtTime(0.0001, start);
+        amp.gain.exponentialRampToValueAtTime(gain, start + 0.02);
+        amp.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+        osc.connect(amp).connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + duration + 0.04);
+      }
+
+      function playRevealSound(kind) {
+        if (!kind || kind === 'off') return;
+        const ctx = ensureAudioContext();
+        if (!ctx) return;
+        const t = ctx.currentTime + 0.02;
+        if (kind === 'victory_chime') {
+          playTone(ctx, 523.25, t, 0.24, 'triangle');
+          playTone(ctx, 659.25, t + 0.16, 0.28, 'triangle');
+          playTone(ctx, 783.99, t + 0.34, 0.34, 'triangle');
+        } else if (kind === 'confetti_hits') {
+          playTone(ctx, 740, t, 0.10, 'square', 0.05);
+          playTone(ctx, 988, t + 0.12, 0.10, 'square', 0.05);
+          playTone(ctx, 1318, t + 0.24, 0.12, 'square', 0.05);
+        } else if (kind === 'arcade_stinger') {
+          playTone(ctx, 392, t, 0.16, 'sawtooth', 0.05);
+          playTone(ctx, 587.33, t + 0.14, 0.18, 'sawtooth', 0.05);
+          playTone(ctx, 880, t + 0.28, 0.26, 'sawtooth', 0.06);
+        } else if (kind === 'dramatic_rise') {
+          [220, 293.66, 329.63, 440, 587.33].forEach((freq, idx) => playTone(ctx, freq, t + idx * 0.1, 0.26, 'triangle', 0.04));
+        }
+      }
+
+      function currentTickSoundPack() {
+        return latestState?.reveal?.tick_sound_pack || 'arcade_ticks';
+      }
+
+      function currentFlipStyle() {
+        return latestState?.reveal?.flip_style || 'arcade_flip';
+      }
+
+      function playSubmissionTick(isWinnerIncoming = false) {
+        const ctx = ensureAudioContext();
+        if (!ctx) return;
+        const t = ctx.currentTime + 0.01;
+        const pack = currentTickSoundPack();
+        if (pack === 'dramatic_ticks') {
+          if (isWinnerIncoming) {
+            playTone(ctx, 261.63, t, 0.09, 'triangle', 0.028);
+            playTone(ctx, 392.0, t + 0.1, 0.16, 'sawtooth', 0.035);
+          } else {
+            playTone(ctx, 196.0, t, 0.07, 'triangle', 0.022);
+            playTone(ctx, 246.94, t + 0.06, 0.08, 'triangle', 0.019);
+          }
+        } else if (pack === 'clean_clicks') {
+          if (isWinnerIncoming) {
+            playTone(ctx, 880.0, t, 0.04, 'square', 0.018);
+            playTone(ctx, 1174.66, t + 0.045, 0.05, 'square', 0.016);
+          } else {
+            playTone(ctx, 659.25, t, 0.03, 'square', 0.012);
+            playTone(ctx, 659.25, t + 0.03, 0.03, 'square', 0.01);
+          }
+        } else if (pack === 'party_pops') {
+          if (isWinnerIncoming) {
+            playTone(ctx, 740.0, t, 0.05, 'sine', 0.018);
+            playTone(ctx, 988.0, t + 0.04, 0.06, 'sine', 0.018);
+            playTone(ctx, 1318.0, t + 0.08, 0.07, 'sine', 0.02);
+          } else {
+            playTone(ctx, 523.25, t, 0.04, 'sine', 0.014);
+            playTone(ctx, 783.99, t + 0.025, 0.04, 'sine', 0.014);
+          }
+        } else {
+          if (isWinnerIncoming) {
+            playTone(ctx, 622.25, t, 0.08, 'triangle', 0.035);
+            playTone(ctx, 830.61, t + 0.08, 0.10, 'triangle', 0.04);
+          } else {
+            playTone(ctx, 392.0, t, 0.05, 'square', 0.022);
+            playTone(ctx, 523.25, t + 0.045, 0.05, 'square', 0.018);
+          }
+        }
+      }
+
+      function animateSequenceFlip(current, index, total, winnerSubmissionId, stepMs, onDone) {
+        const flipCard = el('sequenceFlipCard');
+        const answerNode = el('sequenceAnswer');
+        const modeNode = el('sequenceModeLabel');
+        const progressNode = el('sequenceProgress');
+        const countNode = el('sequenceCount');
+        const labelNode = el('sequenceCardLabel');
+        if (!flipCard || !answerNode || !modeNode || !progressNode || !countNode || !labelNode) {
+          onDone?.();
+          return;
+        }
+
+        const isWinnerIncoming = current?.id === winnerSubmissionId;
+        const animationMs = Math.max(520, Math.min(900, Math.floor(stepMs * 0.42)));
+        const midMs = Math.floor(animationMs / 2);
+
+        flipCard.classList.remove('flipping', 'winner-glow', 'style-arcade_flip', 'style-dramatic_flip', 'style-clean_flip', 'style-party_bounce');
+        flipCard.classList.add(`style-${currentFlipStyle()}`);
+        void flipCard.offsetWidth;
+        playSubmissionTick(isWinnerIncoming);
+        flipCard.classList.add('flipping');
+
+        submissionFlipMidTimer = window.setTimeout(() => {
+          countNode.textContent = `Submission ${index + 1}`;
+          progressNode.textContent = `${index + 1} / ${total}`;
+          answerNode.textContent = current?.card || '—';
+          modeNode.textContent = isWinnerIncoming ? 'Winning card incoming' : 'Anonymous reveal';
+          labelNode.textContent = isWinnerIncoming ? 'Final anonymous card' : 'Anonymous card';
+          flipCard.classList.toggle('winner-glow', isWinnerIncoming);
+        }, midMs);
+
+        submissionFlipEndTimer = window.setTimeout(() => {
+          flipCard.classList.remove('flipping');
+          onDone?.();
+        }, animationMs);
+      }
+
+      async function saveRevealConfig(source = 'host') {
+        const prefix = source === 'tv' ? 'tv' : '';
+        const duration = parseInt(el(prefix ? 'tvRevealDurationInput' : 'revealDurationInput').value || '6500', 10);
+        const sound = el(prefix ? 'tvRevealSoundSelect' : 'revealSoundSelect').value;
+        const autoAdvanceSeconds = parseInt(el(prefix ? 'tvAutoAdvanceSecondsInput' : 'autoAdvanceSecondsInput').value || '0', 10);
+        const autoAdvanceEnabled = el(prefix ? 'tvAutoAdvanceEnabledInput' : 'autoAdvanceEnabledInput').value === 'true';
+        const submissionRevealEnabled = el(prefix ? 'tvSubmissionRevealEnabledInput' : 'submissionRevealEnabledInput').value === 'true';
+        const submissionRevealStepMs = parseInt(el(prefix ? 'tvSubmissionRevealStepMsInput' : 'submissionRevealStepMsInput').value || '1800', 10);
+        const flipStyle = el(prefix ? 'tvFlipStyleSelect' : 'flipStyleSelect').value;
+        const tickSoundPack = el(prefix ? 'tvTickSoundPackSelect' : 'tickSoundPackSelect').value;
+        await hostAction('set_reveal_config', {
+          duration_ms: duration,
+          sound,
+          auto_advance_enabled: autoAdvanceEnabled,
+          auto_advance_seconds: autoAdvanceSeconds,
+          submission_reveal_enabled: submissionRevealEnabled,
+          submission_reveal_step_ms: submissionRevealStepMs,
+          flip_style: flipStyle,
+          tick_sound_pack: tickSoundPack,
+          theme_preset: 'custom',
+        });
+        setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', 'Reveal settings saved.', 'success');
+      }
+
+      async function applyThemePreset(source = 'host') {
+        const presetId = el(source === 'tv' ? 'tvThemePresetSelect' : 'themePresetSelect').value;
+        if (!presetId) throw new Error('Choose a theme preset');
+        await hostAction('set_reveal_config', { theme_preset: presetId });
+        setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', 'Theme preset applied.', 'success');
+      }
+
+      async function saveCustomPreset(source = 'host') {
+        const nameInput = el(source === 'tv' ? 'tvCustomPresetNameInput' : 'customPresetNameInput');
+        const descriptionInput = el(source === 'tv' ? 'tvCustomPresetDescriptionInput' : 'customPresetDescriptionInput');
+        const name = (nameInput?.value || '').trim();
+        const description = (descriptionInput?.value || '').trim();
+        if (!name) throw new Error('Enter a preset name');
+        await hostAction('save_custom_theme_preset', { name, description });
+        if (nameInput) nameInput.value = '';
+        if (descriptionInput) descriptionInput.value = '';
+        setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', 'Custom preset saved.', 'success');
+      }
+
+      async function deleteThemePreset(source = 'host') {
+        const select = el(source === 'tv' ? 'tvThemePresetSelect' : 'themePresetSelect');
+        const presetId = select?.value || '';
+        const options = latestState?.reveal?.theme_preset_options || [];
+        const preset = options.find((item) => item.slug === presetId);
+        if (!preset?.is_custom) throw new Error('Select a custom preset to delete');
+        await hostAction('delete_custom_theme_preset', { preset_slug: presetId });
+        setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', 'Custom preset deleted.', 'success');
+      }
+
+
+      async function exportPresets(source = 'host') {
+        const response = await fetch('/api/ha_card_game/host/presets/export', { credentials: 'same-origin' });
+        if (!response.ok) throw new Error('Failed to export presets');
+        const payload = await response.json();
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `ha_card_game_theme_presets_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', 'Preset export downloaded.', 'success');
+      }
+
+      async function importPresets(source = 'host') {
+        const fileInput = el(source === 'tv' ? 'tvPresetImportFileInput' : 'presetImportFileInput');
+        const modeSelect = el(source === 'tv' ? 'tvPresetImportModeSelect' : 'presetImportModeSelect');
+        const file = fileInput?.files?.[0];
+        if (!file) throw new Error('Choose a preset JSON file first');
+        const raw = await file.text();
+        let payload;
+        try {
+          payload = JSON.parse(raw);
+        } catch (_err) {
+          throw new Error('Preset file is not valid JSON');
+        }
+        await hostAction('import_theme_presets', {
+          payload,
+          import_mode: modeSelect?.value || 'merge',
+        });
+        if (fileInput) fileInput.value = '';
+        setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', 'Preset import complete.', 'success');
+      }
+
+      async function exportDecks(source = 'host') {
+        const response = await fetch('/api/ha_card_game/host/decks/export', { credentials: 'same-origin' });
+        if (!response.ok) throw new Error('Failed to export deck packs');
+        const payload = await response.json();
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `ha_card_game_deck_packs_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', 'Deck pack export downloaded.', 'success');
+      }
+
+      async function importDecks(source = 'host') {
+        const fileInput = el(source === 'tv' ? 'tvDeckImportFileInput' : 'deckImportFileInput');
+        const modeSelect = el(source === 'tv' ? 'tvDeckImportModeSelect' : 'deckImportModeSelect');
+        const file = fileInput?.files?.[0];
+        if (!file) throw new Error('Choose a deck pack JSON file first');
+        const raw = await file.text();
+        let payload;
+        try {
+          payload = JSON.parse(raw);
+        } catch (_err) {
+          throw new Error('Deck pack file is not valid JSON');
+        }
+        await hostAction('import_deck_packs', {
+          payload,
+          import_mode: modeSelect?.value || 'merge',
+        });
+        if (fileInput) fileInput.value = '';
+        setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', 'Deck pack import complete.', 'success');
+      }
+
+      function renderPlayers(players, judge) {
+        const teamMode = !!latestState?.trivia?.team_mode;
+        const list = el('playersList');
+        if (list) {
+          list.innerHTML = players.map((player) => `
+            <div class="row player-row">
+              <div>
+                <strong>${player.name}</strong>
+                <div class="muted small">${player.name === judge && latestState?.game_mode !== 'trivia' ? 'Current judge' : 'Player'}${teamMode ? ` · ${player.team || 'Solo'}` : ''}</div>
+              </div>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
+                ${player.name === judge && latestState?.game_mode !== 'trivia' ? '<span class="badge">Judge</span>' : ''}
+                ${teamMode ? `<span class="badge">${player.team || 'Solo'}</span>` : ''}
+                <span class="badge">${player.score} pts</span>
+                <span class="badge">${player.hand_count || 0} hand</span>
+                ${hostEnabled ? `<select class="small-select" data-player-user-select="${escapeAttr(player.name)}"></select>` : ''}
+                ${hostEnabled && teamMode ? `<button class="secondary small-btn" data-assign-team="${escapeAttr(player.name)}" data-team-name="Team A">A</button><button class="secondary small-btn" data-assign-team="${escapeAttr(player.name)}" data-team-name="Team B">B</button>` : ''}
+                ${hostEnabled ? `<button class="danger small-btn" data-remove-player="${escapeAttr(player.name)}">Remove</button>` : ''}
+              </div>
+            </div>
+          `).join('') || '<div class="muted">No players yet.</div>';
+
+          list.querySelectorAll('[data-remove-player]').forEach((button) => {
+            button.addEventListener('click', async () => {
+              try {
+                await hostAction('remove_player', { player_name: button.dataset.removePlayer });
+                setNotice('hostNotice', `Removed ${button.dataset.removePlayer}.`, 'success');
+              } catch (err) {
+                setNotice('hostNotice', err.message, 'warning');
+              }
+            });
+          });
+          list.querySelectorAll('[data-assign-team]').forEach((button) => {
+            button.addEventListener('click', async () => {
+              try {
+                await hostAction('assign_player_team', { player_name: button.dataset.assignTeam, team_name: button.dataset.teamName });
+                setNotice('hostExtraNotice', `Assigned ${button.dataset.assignTeam} to ${button.dataset.teamName}.`, 'success');
+              } catch (err) {
+                setNotice('hostExtraNotice', err.message, 'warning');
+              }
+            });
+          });
+          renderPlayerUserLinks(Array.isArray(latestHost?.available_host_users) ? latestHost.available_host_users : []);
+        }
+
+        const tvPlayers = el('tvPlayers');
+        tvPlayers.innerHTML = players.map((player) => `
+          <div class="tv-player ${player.name === judge && latestState?.game_mode !== 'trivia' ? 'judge' : ''}">
+            <span>${player.name}${teamMode ? ` · ${player.team || 'Solo'}` : ''}</span>
+            <span>${player.name === judge && latestState?.game_mode !== 'trivia' ? 'Judge' : `${player.score} pts`}</span>
+          </div>
+        `).join('') || '<div class="muted">No players yet.</div>';
+      }
+
+      function renderScoreboard(leaderboard) {
+        const teamBoard = latestState?.trivia?.team_mode ? (latestState?.trivia?.team_leaderboard || latestState?.team_leaderboard || []) : [];
+        const teamMarkup = teamBoard.length ? `<div style="margin-bottom:12px;"><div class="label">Teams</div>${teamBoard.map((item, idx) => `<div class="row"><strong>#${idx + 1} ${item.name}</strong><span class="badge">${item.score} pts</span></div>`).join('')}</div>` : '';
+        const markup = leaderboard.map((item, idx) => `
+          <div class="row score-row-with-avatar">
+            <div class="score-name-wrap">
+              ${item.picture_url ? `<img class="score-avatar" src="${escapeAttr(item.picture_url)}" alt="${escapeAttr(item.name)}" />` : `<div class="score-avatar placeholder">${escapeHtml((item.name || '?').slice(0,1).toUpperCase())}</div>`}
+              <strong>#${idx + 1} ${item.name}</strong>
+            </div>
+            <span class="badge">${item.score} pts</span>
+          </div>
+        `).join('') || '<div class="muted">No scores yet.</div>';
+        const combined = teamMarkup + markup;
+        if (el('scoreboard')) el('scoreboard').innerHTML = combined;
+        if (el('topScoreboard')) el('topScoreboard').innerHTML = `<div class="label">Scoreboard</div>${markup}`;
+
+        el('tvScoreboard').innerHTML = (teamBoard.length ? teamBoard.map((item, idx) => `
+          <div class="tv-score-row ${idx === 0 ? 'leader' : ''}">
+            <span>Team ${item.name.replace('Team ','')}</span>
+            <strong>${item.score}</strong>
+          </div>
+        `).join('') : '') + (leaderboard.map((item, idx) => `
+          <div class="tv-score-row ${idx === 0 && !teamBoard.length ? 'leader' : ''}">
+            <span>#${idx + 1} ${item.name}</span>
+            <strong>${item.score}</strong>
+          </div>
+        `).join('') || '<div class="muted">No scores yet.</div>');
+      }
+
+      function renderJudgeSubmissions(state) {
+        const panel = el('judgeSubmissions');
+        panel.innerHTML = (state.public_submissions || []).map((submission) => `
+          <div class="submission-card">
+            <div class="submission-id">Submission ${submission.id.replace('sub_', '')}</div>
+            <div>${submission.card}</div>
+            <div><button data-submission-id="${submission.id}">Pick winner</button></div>
+          </div>
+        `).join('') || '<div class="muted">Waiting for all players to submit.</div>';
+
+        panel.querySelectorAll('button[data-submission-id]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            try {
+              await api('/api/ha_card_game/pick_winner', 'POST', {
+                session_token: session?.session_token,
+                submission_id: button.dataset.submissionId,
+              });
+              setNotice('playerNotice', 'Winner selected.', 'success');
+            } catch (err) {
+              setNotice('playerNotice', err.message, 'warning');
+            }
+          });
+        });
+      }
+
+      function renderHand(state) {
+        const hand = el('handList');
+        const cards = state.hand || [];
+        hand.innerHTML = cards.map((card) => `<button class="hand-card" data-card="${escapeAttr(card)}">${card}</button>`).join('') || '<div class="muted">No hand cards yet.</div>';
+        hand.querySelectorAll('[data-card]').forEach((button) => {
+          button.addEventListener('click', () => {
+            el('cardText').value = button.dataset.card;
+          });
+        });
+      }
+
+      function renderTriviaChoices(state) {
+        const hand = el('handList');
+        const choices = state.trivia?.current_question?.choices || [];
+        const buzzerMode = !!state.trivia?.buzzer_mode;
+        const buzzOwner = state.trivia?.buzz_owner || '';
+        const canAnswer = !buzzerMode || buzzOwner === state.player_name;
+        hand.innerHTML = choices.map((choice, idx) => `<button class="hand-card" ${canAnswer ? '' : 'disabled'} data-choice-index="${idx}" data-card="${escapeAttr(choice)}">${String.fromCharCode(65 + idx)}. ${choice}</button>`).join('') || '<div class="muted">Waiting for question choices.</div>';
+        hand.querySelectorAll('[data-choice-index]').forEach((button) => {
+          button.addEventListener('click', async () => {
+            if (!canAnswer) return;
+            el('cardText').value = button.dataset.card;
+            await submitCard();
+          });
+        });
+      }
+
+      function renderTriviaJudgeSubmissions(state) {
+        const panel = el('judgeSubmissions');
+        const results = state.trivia?.results || [];
+        const correct = state.trivia?.current_question?.correct_answer || state.winner_card || '';
+        const explanation = state.trivia?.current_question?.explanation || '';
+        panel.innerHTML = results.map((item) => `
+          <div class="submission-card ${item.correct ? 'winner' : ''}">
+            <div class="submission-id">${item.player}${state.trivia?.team_mode ? ` · ${item.team || 'Solo'}` : ''}</div>
+            <div>${item.answer || '—'}</div>
+            <div class="muted">${item.correct ? 'Correct' : 'Incorrect'}</div>
+          </div>
+        `).join('') + (results.length ? `<div class="notice" style="margin-top:12px;">Correct answer: <strong>${correct}</strong>${explanation ? `<div class="muted" style="margin-top:6px;">${explanation}</div>` : ''}</div>` : '<div class="muted">Waiting for trivia results.</div>');
+      }
+
+      function renderPlayerControls(state) {
+        const joined = !!state.is_joined;
+        const isJudge = !!state.is_judge;
+        const hasSubmitted = !!state.has_submitted;
+        const triviaMode = state.game_mode === 'trivia';
+        const triviaResult = (state.trivia?.results || []).find((item) => item.player === state.player_name);
+        el('playerHeading').textContent = joined ? `Player: ${state.player_name}${state.team ? ` · ${state.team}` : ''}` : 'Join the game';
+        show(el('joinPanel'), !joined);
+        show(el('activePlayerPanel'), joined);
+        show(el('submitPanel'), joined && (!isJudge || triviaMode));
+        show(el('judgePanel'), joined && isJudge && !triviaMode);
+
+        if (!joined && joinCodeFromUrl) {
+          setNotice('playerNotice', `Joining room ${joinCodeFromUrl}`, '');
+        } else if (joined && triviaMode && state.state === 'results' && triviaResult) {
+          setNotice('playerNotice', triviaResult.correct ? `Correct! ${state.team ? `${state.team} now has ${state.team_score || 0} pts.` : ''}` : `Not this round. Correct answer: ${state.winner_card || state.trivia?.current_question?.correct_answer || ''}`, triviaResult.correct ? 'success' : 'warning');
+        } else if (joined && state.state === 'results' && state.winner) {
+          setNotice('playerNotice', `${state.winner} won the round.`, 'success');
+        } else if (joined && isJudge && state.state !== 'judging' && !triviaMode) {
+          setNotice('playerNotice', 'You are the judge. Waiting for submissions.', '');
+        } else if (joined && triviaMode && state.trivia?.steal_active && !hasSubmitted) {
+          setNotice('playerNotice', state.trivia?.steal_team ? `Steal chance for ${state.trivia.steal_team}. Buzz in now.` : 'Steal chance is live. Buzz in now.', 'warning');
+        } else if (joined && triviaMode && state.trivia?.buzzer_mode && !state.trivia?.buzz_owner && !hasSubmitted) {
+          setNotice('playerNotice', 'Buzz in first to answer.', '');
+        } else if (joined && triviaMode && state.trivia?.buzzer_mode && state.trivia?.buzz_owner && state.trivia?.buzz_owner !== state.player_name && !hasSubmitted) {
+          setNotice('playerNotice', `${state.trivia.buzz_owner} has control of this question.`, '');
+        } else if (joined && triviaMode && hasSubmitted) {
+          setNotice('playerNotice', 'Trivia answer locked in. Waiting for the round to resolve.', 'success');
+        } else if (joined && !isJudge && hasSubmitted) {
+          setNotice('playerNotice', 'Card submitted. Waiting for the judge.', 'success');
+        } else {
+          setNotice('playerNotice', '');
+        }
+
+        const canBuzz = !!(triviaMode && state.trivia?.buzzer_mode && state.state === 'submitting' && !hasSubmitted && (!state.trivia?.buzz_owner || state.trivia?.buzz_owner === state.player_name) && (!state.trivia?.steal_active || !state.trivia?.steal_team || state.team === state.trivia?.steal_team));
+        const canSubmitTrivia = !!(triviaMode && state.state === 'submitting' && !hasSubmitted && (!state.trivia?.buzzer_mode || state.trivia?.buzz_owner === state.player_name));
+        el('submitBtn').disabled = triviaMode ? !canSubmitTrivia : (hasSubmitted || state.state !== 'submitting');
+        el('buzzBtn').disabled = !canBuzz;
+        el('buzzBtn').style.display = triviaMode && state.trivia?.buzzer_mode ? '' : 'none';
+        el('cardText').disabled = hasSubmitted || state.state !== 'submitting';
+        el('cardText').style.display = triviaMode ? 'none' : '';
+        const submitLabel = document.querySelector('label[for="cardText"]');
+        if (submitLabel) submitLabel.style.display = triviaMode ? 'none' : '';
+        if (triviaMode) {
+          renderTriviaChoices(state);
+          if (state.state === 'results') renderTriviaJudgeSubmissions(state);
+        } else {
+          renderHand(state);
+          if (joined && isJudge) renderJudgeSubmissions(state);
+        }
+      }
+
+      function renderDeckSelect(state) {
+        const decks = state.available_decks || [];
+        const select = el('deckSelect');
+        const selectedDeck = decks.find((item) => item.slug === state.deck_name) || decks[0];
+        select.innerHTML = decks.map((deck) => `<option value="${escapeAttr(deck.slug)}">${deck.name}</option>`).join('');
+        if (state.game_mode === 'trivia') {
+          if (selectedDeck) select.value = selectedDeck.slug;
+          el('deckDescription').textContent = `Trivia category: ${state.trivia?.current_question?.category || state.trivia?.category || 'Trivia'}`;
+          el('selectedDeckMode').value = `Trivia mode · ${state.trivia?.remaining ?? 0} questions remaining`;
+          return;
+        }
+        if (selectedDeck) {
+          select.value = selectedDeck.slug;
+          el('deckDescription').textContent = selectedDeck.description || '';
+          el('selectedDeckMode').value = selectedDeck.allow_free_text ? `Hand + free text · ${selectedDeck.hand_size} cards` : `Hand only · ${selectedDeck.hand_size} cards`;
+        } else {
+          el('deckDescription').textContent = '';
+          el('selectedDeckMode').value = '';
+        }
+      }
+
+      function updateTimerDisplay(state) {
+        const duration = Number(state.round_timer_duration || 0);
+        const endsAt = Number(state.round_timer_ends_at || 0);
+        const timerNodes = [el('tvTimerBadge')].filter(Boolean);
+
+        if (countdownTimer) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+        }
+
+        function draw() {
+          if (!duration || !endsAt) {
+            timerNodes.forEach((node) => {
+              node.textContent = 'No timer';
+              node.classList.remove('danger', 'warning');
+            });
+            return;
+          }
+
+          const remaining = Math.max(0, Math.ceil(endsAt - Date.now() / 1000));
+          const minutes = Math.floor(remaining / 60);
+          const seconds = String(remaining % 60).padStart(2, '0');
+          timerNodes.forEach((node) => {
+            node.textContent = `Timer ${minutes}:${seconds}`;
+            node.classList.toggle('warning', remaining <= 15 && remaining > 5);
+            node.classList.toggle('danger', remaining <= 5);
+          });
+        }
+
+        draw();
+        if (duration && endsAt) countdownTimer = setInterval(draw, 1000);
+      }
+
+      function clearRevealTimers() {
+        if (revealCountdownTimer) {
+          clearInterval(revealCountdownTimer);
+          revealCountdownTimer = null;
+        }
+        if (submissionSequenceTimer) {
+          clearTimeout(submissionSequenceTimer);
+          submissionSequenceTimer = null;
+        }
+        if (submissionFlipMidTimer) {
+          clearTimeout(submissionFlipMidTimer);
+          submissionFlipMidTimer = null;
+        }
+        if (submissionFlipEndTimer) {
+          clearTimeout(submissionFlipEndTimer);
+          submissionFlipEndTimer = null;
+        }
+        if (revealOverlayTimer) {
+          clearTimeout(revealOverlayTimer);
+          revealOverlayTimer = null;
+        }
+        const flipCard = el('sequenceFlipCard');
+        if (flipCard) flipCard.classList.remove('flipping', 'winner-glow', 'style-arcade_flip', 'style-dramatic_flip', 'style-clean_flip', 'style-party_bounce');
+      }
+
+      function showSequenceStage(visible) {
+        show(el('submissionSequenceStage'), visible);
+        show(el('winnerStage'), !visible);
+      }
+
+      function maybeShowWinnerOverlay(state) {
+        const reveal = state.reveal || {};
+        const overlay = el('winnerOverlay');
+        const durationMs = Number(reveal.duration_ms || 6500);
+        const autoAdvanceEnabled = !!reveal.auto_advance_enabled;
+        const autoAdvanceSeconds = Number(reveal.auto_advance_seconds || 0);
+        const sequenceEnabled = reveal.submission_reveal_enabled !== false;
+        const stepMs = Number(reveal.submission_reveal_step_ms || 1800);
+        const sequence = Array.isArray(reveal.submission_sequence) ? reveal.submission_sequence : [];
+
+        function startWinnerStage() {
+          el('winnerName').textContent = state.winner;
+          el('winnerAnswer').textContent = reveal.winner_card || state.winner_card || 'Winning answer';
+          playRevealSound(reveal.sound);
+          showSequenceStage(false);
+          show(overlay, true);
+          revealOverlayTimer = window.setTimeout(() => show(overlay, false), durationMs);
+
+          const countdownNode = el('winnerCountdown');
+          if (autoAdvanceEnabled && autoAdvanceSeconds > 0) {
+            const startedAt = Date.now();
+            const updateCountdown = () => {
+              const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+              const remaining = Math.max(0, autoAdvanceSeconds - elapsed);
+              countdownNode.textContent = `Next round in ${remaining}s`;
+            };
+            updateCountdown();
+            revealCountdownTimer = window.setInterval(updateCountdown, 1000);
+          } else {
+            countdownNode.textContent = 'Manual next round';
+          }
+        }
+
+        if (state.winner && state.winner !== previousWinner && state.state === 'results') {
+          clearRevealTimers();
+          show(overlay, true);
+
+          if (sequenceEnabled && sequence.length > 0) {
+            let index = 0;
+            showSequenceStage(true);
+            const renderSequenceCard = () => {
+              const current = sequence[index];
+              if (!current) {
+                startWinnerStage();
+                return;
+              }
+              animateSequenceFlip(current, index, sequence.length, reveal.winner_submission_id, stepMs, () => {
+                index += 1;
+                const pauseMs = Math.max(220, stepMs - Math.max(520, Math.min(900, Math.floor(stepMs * 0.42))));
+                submissionSequenceTimer = window.setTimeout(renderSequenceCard, pauseMs);
+              });
+            };
+            renderSequenceCard();
+          } else {
+            startWinnerStage();
+          }
+        }
+        if (!state.winner && previousWinner) {
+          clearRevealTimers();
+          show(overlay, false);
+          showSequenceStage(false);
+        }
+        previousWinner = state.winner || null;
+      }
+
+      function renderTvMode(state) {
+        const triviaMode = state.game_mode === 'trivia';
+        el('tvStateLabel').textContent = triviaMode ? 'Trivia' : state.state.charAt(0).toUpperCase() + state.state.slice(1);
+        el('tvRoundBadge').textContent = `Round ${state.round_number}`;
+        el('tvJudgeBadge').textContent = triviaMode ? (state.trivia?.team_mode ? 'Teams: ON' : 'Trivia mode') : `Judge: ${state.judge || '—'}`;
+        el('tvJoinCode').textContent = state.join_code;
+        el('tvQrImage').src = state.qr_url + '?t=' + Date.now();
+        el('tvJoinUrlText').textContent = formatJoinUrl(state.join_url);
+        el('tvPromptText').textContent = state.current_prompt || 'Waiting for the next round…';
+        el('tvFooterText').textContent = triviaMode && state.state === 'submitting' ? `Category: ${state.trivia?.current_question?.category || state.trivia?.category || 'Trivia'} · Difficulty: ${state.trivia?.current_question?.difficulty || state.trivia?.difficulty || ''}` : describeState(state);
+
+        const strip = el('tvSubmissionStrip');
+        if (triviaMode) {
+          const choices = state.trivia?.current_question?.choices || [];
+          const results = state.trivia?.results || [];
+          show(strip, choices.length > 0 || results.length > 0);
+          if (state.state === 'results' && results.length) {
+            strip.innerHTML = results.map((item) => `
+              <div class="tv-submission-card ${item.correct ? 'winner' : ''}">
+                <div class="submission-id">${item.player}${state.trivia?.team_mode ? ` · ${item.team || 'Solo'}` : ''}</div>
+                <div>${item.answer || '—'}</div>
+                <div class="muted">${item.correct ? 'Correct' : 'Incorrect'}</div>
+              </div>
+            `).join('') + `<div class="tv-submission-card winner"><div class="submission-id">Answer</div><div>${state.winner_card || state.trivia?.current_question?.correct_answer || ''}</div><div class="muted">${state.trivia?.current_question?.explanation || ''}</div></div>`;
+          } else {
+            strip.innerHTML = choices.map((choice, idx) => `
+              <div class="tv-submission-card">
+                <div class="submission-id">${String.fromCharCode(65 + idx)}</div>
+                <div>${choice}</div>
+              </div>
+            `).join('');
+          }
+        } else {
+          const submissions = state.public_submissions || [];
+          show(strip, state.state === 'judging' && submissions.length > 0);
+          strip.innerHTML = submissions.map((submission) => `
+            <div class="tv-submission-card">
+              <div class="submission-id">Submission ${submission.id.replace('sub_', '')}</div>
+              <div>${submission.card}</div>
+            </div>
+          `).join('');
+        }
+
+        show(el('tvHostPanel'), hostEnabled);
+        if (!triviaMode) maybeShowWinnerOverlay(state);
+      }
+
+      function render(state) {
+        latestState = state;
+        if (window.renderAiModerationQueue) window.renderAiModerationQueue();
+        if (window.renderManualEditor) window.renderManualEditor();
+        el('joinCodeTop').textContent = state.join_code;
+        el('joinCodeMain').textContent = state.join_code;
+        el('joinUrl').value = state.join_url;
+        el('qrImage').src = state.qr_url + '?t=' + Date.now();
+        el('stateBadge').textContent = state.state;
+        el('roundBadge').textContent = `Round ${state.round_number}`;
+        el('judgeBadge').textContent = state.game_mode === 'trivia' ? 'Trivia mode' : `Judge: ${state.judge || '—'}`;
+        const roomLabel = state.active_instance_name || 'Live room';
+        if (el('activeInstanceNameLabel')) el('activeInstanceNameLabel').textContent = roomLabel;
+        if (el('hostStartBtn')) el('hostStartBtn').textContent = state.game_mode === 'trivia' ? 'Start trivia' : 'Start game';
+        el('promptText').textContent = state.current_prompt || 'Waiting for the next round…';
+        renderPlayers(state.players || [], state.judge);
+        renderScoreboard(state.leaderboard || []);
+        applyTheme(state);
+        renderPlayerControls(state);
+        renderDeckSelect(state);
+        populateRevealControls(state);
+        renderTvMode(state);
+        updateTimerDisplay(state);
+        refreshLayoutByContext();
+      }
+
+      async function fetchState() {
+        const token = session?.session_token ? `?token=${encodeURIComponent(session.session_token)}` : '';
+        const data = await api(`/api/ha_card_game/state${token}`);
+        render(data.state);
+      }
+
+      async function hostAction(action, extra = {}) {
+        return api('/api/ha_card_game/host/action', 'POST', { action, ...extra });
+      }
+
+      async function bootstrapHost() {
+        try {
+          const data = await api('/api/ha_card_game/host/bootstrap');
+          latestHost = data.host || null;
+          hostEnabled = !!data.host?.can_manage;
+          document.body.classList.toggle('host-user', hostEnabled);
+          el('hostBadge').textContent = 'Host UI: enabled';
+          show(el('hostControls'), true);
+          show(el('hostLocked'), false);
+          render(data.state);
+          renderHostUsers(data.host);
+        } catch (_err) {
+          latestHost = null;
+          hostEnabled = false;
+          document.body.classList.toggle('host-user', false);
+          el('hostBadge').textContent = 'Host UI: locked';
+          show(el('hostControls'), false);
+          show(el('hostLocked'), true);
+          const locked = el('hostLocked'); if (locked) { locked.textContent = 'Host controls are limited to allowed host users.'; }
+          refreshLayoutByContext();
+        }
+      }
+
+      async function joinPlayer() {
+        try {
+          const playerName = el('playerNameInput').value.trim();
+          const joinCode = joinCodeFromUrl || latestState?.join_code;
+          const data = await api('/api/ha_card_game/join', 'POST', {
+            join_code: joinCode,
+            player_name: playerName,
+          });
+          persistSession({
+            player_name: data.player_name,
+            session_token: data.session_token,
+          });
+          await fetchState();
+          setNotice('playerNotice', 'Joined successfully.', 'success');
+        } catch (err) {
+          setNotice('playerNotice', err.message, 'warning');
+        }
+      }
+
+      async function submitCard() {
+        try {
+          await api('/api/ha_card_game/submit', 'POST', {
+            session_token: session?.session_token,
+            card_text: el('cardText').value,
+          });
+          el('cardText').value = '';
+          await fetchState();
+          setNotice('playerNotice', 'Card submitted.', 'success');
+        } catch (err) {
+          setNotice('playerNotice', err.message, 'warning');
+        }
+      }
+
+      async function setRoundTimer(source = 'host') {
+        const inputId = source === 'tv' ? 'tvTimerSecondsInput' : 'timerSecondsInput';
+        try {
+          const seconds = parseInt(el(inputId).value || '0', 10);
+          if (!Number.isFinite(seconds) || seconds < 0) throw new Error('Enter timer seconds');
+          await hostAction('set_round_timer', { seconds });
+          setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', `Timer started for ${seconds} seconds.`, 'success');
+        } catch (err) {
+          setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', err.message, 'warning');
+        }
+      }
+
+      async function clearRoundTimer(source = 'host') {
+        try {
+          await hostAction('clear_round_timer');
+          setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', 'Timer cleared.', 'success');
+        } catch (err) {
+          setNotice(source === 'tv' ? 'tvHostNotice' : 'hostNotice', err.message, 'warning');
+        }
+      }
+
+      function openTvMode() {
+        const next = new URL(window.location.href);
+        next.searchParams.set('mode', 'tv');
+        window.open(next.toString(), '_blank', 'noopener');
+      }
+
+      function exitTvMode() {
+        const next = new URL(window.location.href);
+        next.searchParams.delete('mode');
+        window.location.href = next.toString();
+      }
+
+      async function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+          await document.exitFullscreen().catch(() => {});
+        }
+      }
+
+      function applyModeLayout() {
+        document.body.classList.toggle('tv-mode', isTvMode());
+        show(el('standardHero'), !isTvMode());
+        show(el('standardLayout'), !isTvMode());
+        show(el('standardScoreboardCard'), !isTvMode());
+        show(el('tvShell'), isTvMode());
+        refreshLayoutByContext();
+      }
+
+      function connectWebSocket() {
+        if (ws) ws.close();
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        ws = new WebSocket(`${protocol}//${window.location.host}/api/ha_card_game/ws`);
+        ws.addEventListener('open', () => {
+          setConnection('Live', true);
+          if (reconnectTimer) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+        });
+        ws.addEventListener('message', (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.event === 'state' && payload.state) {
+              const state = { ...payload.state };
+              if (session?.session_token && latestState) {
+                state.is_joined = latestState.is_joined;
+                state.player_name = latestState.player_name;
+                state.is_judge = latestState.is_judge;
+                state.has_submitted = latestState.has_submitted;
+                state.hand = latestState.hand;
+              }
+              render(state);
+              if (session?.session_token) fetchState().catch(() => {});
+            }
+          } catch (err) {
+            console.error(err);
+          }
+        });
+        ws.addEventListener('close', () => {
+          setConnection('Reconnecting…', false);
+          reconnectTimer = setTimeout(connectWebSocket, 1500);
+        });
+        ws.addEventListener('error', () => {
+          setConnection('Connection issue', false);
+          ws.close();
+        });
+      }
+
+      el('joinBtn').addEventListener('click', joinPlayer);
+      el('submitBtn').addEventListener('click', submitCard);
+      el('copyJoinBtn').addEventListener('click', async () => {
+        await navigator.clipboard.writeText(el('joinUrl').value);
+        setNotice(hostEnabled ? 'hostNotice' : 'playerNotice', 'Join link copied.', 'success');
+      });
+      el('deckSelect').addEventListener('change', async (event) => {
+        try {
+          await hostAction('set_deck', { deck_name: event.target.value });
+          setNotice('hostNotice', 'Deck changed.', 'success');
+        } catch (err) {
+          setNotice('hostNotice', err.message, 'warning');
+        }
+      });
+      el('hostStartBtn').addEventListener('click', async () => {
+        try {
+          await hostAction('start_game', { deck_name: el('deckSelect').value, game_mode: latestState?.game_mode === 'trivia' ? 'trivia' : 'cards' });
+          setNotice('hostNotice', latestState?.game_mode === 'trivia' ? 'Trivia started.' : 'Game started.', 'success');
+        } catch (err) {
+          setNotice('hostNotice', err.message, 'warning');
+        }
+      });
+      el('hostNextBtn').addEventListener('click', async () => {
+        try {
+          await hostAction('next_round');
+          setNotice('hostNotice', 'Advanced to the next round.', 'success');
+        } catch (err) {
+          setNotice('hostNotice', err.message, 'warning');
+        }
+      });
+      el('hostReloadDecksBtn').addEventListener('click', async () => {
+        try {
+          await hostAction('reload_decks');
+          setNotice('hostNotice', 'Decks reloaded from /config/ha_card_game_decks.', 'success');
+        } catch (err) {
+          setNotice('hostNotice', err.message, 'warning');
+        }
+      });
+      el('hostResetBtn').addEventListener('click', async () => {
+        try {
+          await hostAction('reset_game');
+          localStorage.removeItem(storageKey);
+          session = null;
+          setNotice('hostNotice', 'Lobby reset and new join code issued.', 'success');
+        } catch (err) {
+          setNotice('hostNotice', err.message, 'warning');
+        }
+      });
+      el('setTimerBtn').addEventListener('click', () => setRoundTimer('host'));
+      el('clearTimerBtn').addEventListener('click', () => clearRoundTimer('host'));
+      el('openTvBtn').addEventListener('click', openTvMode);
+      el('toggleFullscreenBtn').addEventListener('click', toggleFullscreen);
+      el('saveRevealConfigBtn').addEventListener('click', () => saveRevealConfig('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
+      el('saveHostUsersBtn').addEventListener('click', async () => {
+        try {
+          const selected = Array.from(el('hostUsersSelect').selectedOptions || []).map((option) => option.value);
+          await hostAction('set_allowed_host_users', { user_ids: selected });
+          await bootstrapHost();
+          setNotice('hostNotice', 'Host users updated.', 'success');
+        } catch (err) {
+          setNotice('hostNotice', err.message, 'warning');
+        }
+      });
+      el('applyThemePresetBtn').addEventListener('click', () => applyThemePreset('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
+      el('saveCustomPresetBtn').addEventListener('click', () => saveCustomPreset('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
+      el('exportPresetsBtn').addEventListener('click', () => exportPresets('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
+      el('importPresetsBtn').addEventListener('click', () => importPresets('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
+      el('deleteThemePresetBtn').addEventListener('click', () => deleteThemePreset('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
+      el('exportDecksBtn').addEventListener('click', () => exportDecks('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
+      el('importDecksBtn').addEventListener('click', () => importDecks('host').catch((err) => setNotice('hostNotice', err.message, 'warning')));
+      el('themePresetSelect').addEventListener('change', () => {
+        const reveal = latestState?.reveal || {};
+        const options = reveal.theme_preset_options || [];
+        const selected = options.find((item) => item.slug === el('themePresetSelect').value);
+        if (el('themePresetDescription')) el('themePresetDescription').textContent = selected?.description || 'Manual reveal/theme mix.';
+      });
+      el('tvStartTimerBtn').addEventListener('click', () => setRoundTimer('tv'));
+      el('tvClearTimerBtn').addEventListener('click', () => clearRoundTimer('tv'));
+      el('tvNextRoundBtn').addEventListener('click', async () => {
+        try {
+          await hostAction('next_round');
+          setNotice('tvHostNotice', 'Advanced to the next round.', 'success');
+        } catch (err) {
+          setNotice('tvHostNotice', err.message, 'warning');
+        }
+      });
+      el('tvExitModeBtn').addEventListener('click', exitTvMode);
+      el('tvSaveRevealConfigBtn').addEventListener('click', () => saveRevealConfig('tv').catch((err) => setNotice('tvHostNotice', err.message, 'warning')));
+      el('tvApplyThemePresetBtn').addEventListener('click', () => applyThemePreset('tv').catch((err) => setNotice('tvHostNotice', err.message, 'warning')));
+      el('tvSaveCustomPresetBtn').addEventListener('click', () => saveCustomPreset('tv').catch((err) => setNotice('tvHostNotice', err.message, 'warning')));
+      el('tvExportPresetsBtn').addEventListener('click', () => exportPresets('tv').catch((err) => setNotice('tvHostNotice', err.message, 'warning')));
+      el('tvImportPresetsBtn').addEventListener('click', () => importPresets('tv').catch((err) => setNotice('tvHostNotice', err.message, 'warning')));
+      el('tvDeleteThemePresetBtn').addEventListener('click', () => deleteThemePreset('tv').catch((err) => setNotice('tvHostNotice', err.message, 'warning')));
+      el('tvExportDecksBtn').addEventListener('click', () => exportDecks('tv').catch((err) => setNotice('tvHostNotice', err.message, 'warning')));
+      el('tvImportDecksBtn').addEventListener('click', () => importDecks('tv').catch((err) => setNotice('tvHostNotice', err.message, 'warning')));
+      el('tvThemePresetSelect').addEventListener('change', () => {
+        const reveal = latestState?.reveal || {};
+        const options = reveal.theme_preset_options || [];
+        const selected = options.find((item) => item.slug === el('tvThemePresetSelect').value);
+        if (el('tvThemePresetDescription')) el('tvThemePresetDescription').textContent = selected?.description || 'Manual reveal/theme mix.';
+      });
+
+      function ensureExtraHostTools() {
+        const hostRoot = el('hostControls');
+        if (!hostRoot || el('aiToolsMount')) return;
+        const wrap = document.createElement('section');
+        wrap.className = 'card';
+        wrap.id = 'aiToolsMount';
+        wrap.innerHTML = `
+          <h2>AI, Trivia, and Remote</h2>
+          <div class="control-grid">
+            <div><label class="label">AI theme</label><input id="aiThemeInput" placeholder="Smart home chaos" /></div>
+            <div><label class="label">Age range</label><select id="aiAgeRangeSelect"><option value="6_8">6-8</option><option value="9_12">9-12</option><option value="13_17">13-17</option><option value="18_plus" selected>18+</option></select></div>
+            <div><label class="label">Prompt count</label><input id="aiPromptCountInput" type="number" min="1" value="12" /></div>
+            <div><label class="label">White card count</label><input id="aiWhiteCountInput" type="number" min="3" value="40" /></div>
+          </div>
+          <div class="actions wrap" style="margin-top:12px;">
+            <button class="secondary" id="generateAiDeckBtn">Generate AI deck</button>
+            <button class="secondary" id="extendDeckAiBtn">Add AI cards to selected deck</button>
+          </div>
+          <div class="control-grid" style="margin-top:12px;">
+            <div><label class="label">Trivia category</label><select id="triviaCategorySelect"><option value="history">History</option><option value="fun_facts">Fun facts</option><option value="geography">Geography</option><option value="movies">Movies</option><option value="1990s">1990s</option><option value="2000s">2000s</option><option value="2010s">2010s</option><option value="computer_games">Computer games</option></select></div>
+            <div><label class="label">Trivia age range</label><select id="triviaAgeRangeSelect"><option value="6_8">6-8</option><option value="9_12">9-12</option><option value="13_17">13-17</option><option value="18_plus" selected>18+</option></select></div>
+            <div><label class="label">Question count</label><input id="triviaCountInput" type="number" min="1" value="10" /></div>
+            <div><label class="label">Team mode</label><select id="triviaTeamModeSelect"><option value="false">Off</option><option value="true">Team vs Team</option></select></div>
+            <div><label class="label">Fastest answer</label><select id="triviaBuzzerModeSelect"><option value="false">Off</option><option value="true">Buzzer mode</option></select></div>
+            <div><label class="label">Buzz bonus</label><input id="triviaBuzzBonusInput" type="number" min="0" max="10" value="1" /></div>
+            <div><label class="label">Wrong answer steal</label><select id="triviaStealEnabledSelect"><option value="false">Off</option><option value="true">On</option></select></div>
+            <div><label class="label">Remote invite player</label><input id="remoteInviteNameInput" placeholder="Player name" /></div>
+          </div>
+          <div class="actions wrap" style="margin-top:12px;">
+            <button class="secondary" id="prepareTriviaBtn">Prepare trivia</button>
+            <button class="secondary" id="startTriviaBtn">Start trivia round</button>
+            <button class="secondary" id="gradeTriviaBtn">Grade trivia</button>
+            <button class="secondary" id="createRemoteInviteBtn">Create remote invite</button>
+          </div>
+          <div class="control-grid" style="margin-top:16px;">
+            <div><label class="label">Parental controls</label><select id="pcEnabledSelect"><option value="true" selected>On</option><option value="false">Off</option></select></div>
+            <div><label class="label">Content mode</label><select id="pcContentModeSelect"><option value="family_safe" selected>Family safe</option><option value="teen">Teen</option><option value="adult">Adult</option></select></div>
+            <div><label class="label">AI approval queue</label><select id="pcApprovalSelect"><option value="true" selected>Required</option><option value="false">Auto apply</option></select></div>
+            <div><label class="label">Remote players</label><select id="pcRemoteSelect"><option value="false" selected>Blocked</option><option value="true">Allowed</option></select></div>
+          </div>
+          <div class="control-grid" style="margin-top:12px;">
+            <div style="grid-column:1 / -1;"><label class="label">Allowed trivia categories (comma separated slugs)</label><input id="pcTriviaCategoriesInput" placeholder="history,fun_facts,geography,movies,1990s,2000s,2010s,computer_games" /></div>
+          </div>
+          <div class="actions wrap" style="margin-top:12px;">
+            <button class="secondary" id="saveParentalControlsBtn">Save parental controls</button>
+          </div>
+          <div style="margin-top:16px;">
+            <h3 style="margin:0 0 8px;">AI moderation queue</h3>
+            <div id="aiModerationQueueList" class="stack small"></div>
+          </div>
+          <div class="notice hidden" id="hostExtraNotice"></div>
+        `;
+        hostRoot.appendChild(wrap);
+        el('generateAiDeckBtn').addEventListener('click', async () => {
+          try { await hostAction('generate_ai_deck', { theme: el('aiThemeInput').value || 'Custom AI Pack', age_range: el('aiAgeRangeSelect').value, prompt_count: parseInt(el('aiPromptCountInput').value||'12',10), white_count: parseInt(el('aiWhiteCountInput').value||'40',10), family_friendly: true }); setNotice('hostExtraNotice', 'AI deck generated.', 'success'); }
+          catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
+        });
+        el('extendDeckAiBtn').addEventListener('click', async () => {
+          try { await hostAction('extend_deck_with_ai', { deck_name: el('deckSelect').value, theme: el('aiThemeInput').value || 'Deck Expansion', age_range: el('aiAgeRangeSelect').value, prompt_count: Math.max(1, parseInt(el('aiPromptCountInput').value||'6',10) || 6), white_count: Math.max(3, parseInt(el('aiWhiteCountInput').value||'20',10) || 20), family_friendly: true }); setNotice('hostExtraNotice', 'Selected deck expanded with AI cards.', 'success'); }
+          catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
+        });
+        el('prepareTriviaBtn').addEventListener('click', async () => {
+          try { await hostAction('set_trivia_settings', { team_mode: el('triviaTeamModeSelect').value === 'true', buzzer_mode: el('triviaBuzzerModeSelect').value === 'true', buzz_bonus: parseInt(el('triviaBuzzBonusInput').value||'1',10), steal_enabled: el('triviaStealEnabledSelect').value === 'true' }); await hostAction('prepare_trivia', { category: el('triviaCategorySelect').value, age_range: el('triviaAgeRangeSelect').value, question_count: parseInt(el('triviaCountInput').value||'10',10) }); setNotice('hostExtraNotice', 'Trivia pack prepared.', 'success'); }
+          catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
+        });
+        el('startTriviaBtn').addEventListener('click', async () => {
+          try { await hostAction('start_trivia_round'); setNotice('hostExtraNotice', 'Trivia round started.', 'success'); }
+          catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
+        });
+        el('gradeTriviaBtn').addEventListener('click', async () => {
+          try { const res = await hostAction('grade_trivia_round'); setNotice('hostExtraNotice', 'Trivia graded. Correct answer: ' + ((res.result && res.result.correct_answer) || ''), 'success'); }
+          catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
+        });
+        el('createRemoteInviteBtn').addEventListener('click', async () => {
+          try { const res = await hostAction('create_remote_invite', { player_name: el('remoteInviteNameInput').value || 'Remote Player' }); await navigator.clipboard.writeText((res.invite && res.invite.url) || ''); setNotice('hostExtraNotice', 'Remote invite copied to clipboard.', 'success'); }
+          catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
+        });
+        el('saveParentalControlsBtn').addEventListener('click', async () => {
+          try {
+            const categories = (el('pcTriviaCategoriesInput').value || '').split(',').map((item) => item.trim()).filter(Boolean);
+            await hostAction('set_parental_controls', {
+              enabled: el('pcEnabledSelect').value === 'true',
+              content_mode: el('pcContentModeSelect').value,
+              require_ai_approval: el('pcApprovalSelect').value === 'true',
+              allow_remote_players: el('pcRemoteSelect').value === 'true',
+              allowed_trivia_categories: categories
+            });
+            setNotice('hostExtraNotice', 'Parental controls saved.', 'success');
+          } catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
+        });
+
+        const renderAiModerationQueue = () => {
+          const mount = el('aiModerationQueueList');
+          if (!mount) return;
+          const queue = (latestState && latestState.ai_moderation_queue) || [];
+          if (!queue.length) { mount.innerHTML = '<div class="muted">No AI items waiting for review.</div>'; return; }
+          mount.innerHTML = queue.map((item) => `
+            <div class="card" style="padding:10px;margin-bottom:8px;">
+              <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+                <div><strong>${item.name || item.kind}</strong><div class="muted">${item.kind} • ${item.summary || ''} • ${item.content_mode || ''}</div>${item.issue_count ? `<div class="muted">Filtered issues: ${item.issue_count}</div>` : ''}</div>
+                <div class="actions wrap">
+                  <button class="secondary" data-ai-approve="${item.id}">Approve</button>
+                  <button class="secondary" data-ai-reject="${item.id}">Reject</button>
+                </div>
+              </div>
+            </div>`).join('');
+          mount.querySelectorAll('[data-ai-approve]').forEach((btn) => btn.addEventListener('click', async () => {
+            try { await hostAction('approve_ai_queue_item', { item_id: btn.getAttribute('data-ai-approve') }); setNotice('hostExtraNotice', 'Approved queued AI content.', 'success'); }
+            catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
+          }));
+          mount.querySelectorAll('[data-ai-reject]').forEach((btn) => btn.addEventListener('click', async () => {
+            try { await hostAction('reject_ai_queue_item', { item_id: btn.getAttribute('data-ai-reject') }); setNotice('hostExtraNotice', 'Rejected queued AI content.', 'success'); }
+            catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
+          }));
+        };
+        window.renderAiModerationQueue = renderAiModerationQueue;
+      }
+
+
+      function ensureManualHostEditor() {
+        const hostRoot = el('hostControls');
+        if (!hostRoot || el('manualEditorMount')) return;
+        const wrap = document.createElement('div');
+        wrap.id = 'manualEditorMount';
+        wrap.className = 'card';
+        wrap.style.marginTop = '16px';
+        wrap.innerHTML = `
+          <h3>Manual host editor</h3>
+          <p class="muted">Production-oriented editor for player profiles, tournament settings, and custom offline trivia packs.</p>
+          <div class="control-grid">
+            <div>
+              <label class="label" for="profileSelect">Player profile</label>
+              <select id="profileSelect"></select>
+            </div>
+            <div>
+              <label class="label" for="profileGamesPlayedInput">Games played</label>
+              <input id="profileGamesPlayedInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileCardWinsInput">Card wins</label>
+              <input id="profileCardWinsInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileTriviaCorrectInput">Trivia correct</label>
+              <input id="profileTriviaCorrectInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileTriviaAnsweredInput">Trivia answered</label>
+              <input id="profileTriviaAnsweredInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileBuzzesInput">Buzzes</label>
+              <input id="profileBuzzesInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileStealsInput">Steal wins</label>
+              <input id="profileStealsInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileTournamentWinsInput">Tournament wins</label>
+              <input id="profileTournamentWinsInput" type="number" min="0" value="0" />
+            </div>
+            <div>
+              <label class="label" for="profileTotalPointsInput">Total points</label>
+              <input id="profileTotalPointsInput" type="number" min="0" value="0" />
+            </div>
+          </div>
+          <div class="actions wrap" style="margin-top:12px;">
+            <button class="secondary" id="saveProfileBtn">Save profile</button>
+            <button class="secondary" id="resetProfileBtn">Reset profile</button>
+            <button class="danger" id="deleteProfileBtn">Delete profile</button>
+          </div>
+
+          <h3 style="margin-top:18px;">Tournament editor</h3>
+          <div class="control-grid">
+            <div><label class="label" for="manualTournamentNameInput">Tournament name</label><input id="manualTournamentNameInput" /></div>
+            <div><label class="label" for="manualTournamentTargetInput">Target score</label><input id="manualTournamentTargetInput" type="number" min="1" value="10" /></div>
+            <div><label class="label" for="manualTournamentEnabledSelect">Tournament enabled</label><select id="manualTournamentEnabledSelect"><option value="true">On</option><option value="false">Off</option></select></div>
+          </div>
+          <div class="actions wrap" style="margin-top:12px;">
+            <button class="secondary" id="saveTournamentEditorBtn">Save tournament settings</button>
+            <button class="secondary" id="clearTournamentHistoryBtn">Clear tournament history</button>
+          </div>
+
+          <h3 style="margin-top:18px;">Custom offline trivia pack editor</h3>
+          <div class="control-grid">
+            <div><label class="label" for="customTriviaPackSelect">Existing pack</label><select id="customTriviaPackSelect"></select></div>
+            <div><label class="label" for="customTriviaPackNameInput">Pack name</label><input id="customTriviaPackNameInput" placeholder="Road Trip Facts" /></div>
+            <div><label class="label" for="customTriviaPackSlugInput">Pack slug</label><input id="customTriviaPackSlugInput" placeholder="road_trip_facts" /></div>
+          </div>
+          <div class="control-grid" style="margin-top:12px;">
+            <div style="grid-column:1 / -1;"><label class="label" for="customTriviaPackDescriptionInput">Description</label><input id="customTriviaPackDescriptionInput" placeholder="Family road trip trivia for mixed ages" /></div>
+          </div>
+          <div style="margin-top:12px;">
+            <label class="label" for="customTriviaQuestionsInput">Questions JSON array</label>
+            <textarea id="customTriviaQuestionsInput" style="min-height:220px;" placeholder='[{"question":"What color is the sun?","correct_answer":"Yellow","choices":["Blue","Yellow","Green","Purple"],"accepted_answers":["Yellow"],"difficulty":"easy","age_range":"6_8","explanation":"Basic kid-safe example."}]'></textarea>
+          </div>
+          <div class="actions wrap" style="margin-top:12px;">
+            <button class="secondary" id="saveCustomTriviaPackBtn">Save trivia pack</button>
+            <button class="danger" id="deleteCustomTriviaPackBtn">Delete trivia pack</button>
+          </div>
+          <div class="notice hidden" id="manualEditorNotice"></div>
+        `;
+        hostRoot.appendChild(wrap);
+
+        const loadSelectedProfile = () => {
+          const profiles = (latestState && latestState.profiles) || [];
+          const selected = profiles.find((item) => item.name === el('profileSelect').value) || profiles[0];
+          if (!selected) return;
+          el('profileSelect').value = selected.name;
+          el('profileGamesPlayedInput').value = selected.games_played || 0;
+          el('profileCardWinsInput').value = selected.card_round_wins || 0;
+          el('profileTriviaCorrectInput').value = selected.trivia_correct || 0;
+          el('profileTriviaAnsweredInput').value = selected.trivia_answered || 0;
+          el('profileBuzzesInput').value = selected.buzzes || 0;
+          el('profileStealsInput').value = selected.steal_wins || 0;
+          el('profileTournamentWinsInput').value = selected.tournament_wins || 0;
+          el('profileTotalPointsInput').value = selected.total_points || 0;
+        };
+
+        const loadSelectedCustomPack = () => {
+          const packs = ((latestState && latestState.trivia && latestState.trivia.custom_packs) || []);
+          const selectedSlug = el('customTriviaPackSelect').value;
+          if (!selectedSlug) {
+            el('customTriviaPackNameInput').value = '';
+            el('customTriviaPackSlugInput').value = '';
+            el('customTriviaPackDescriptionInput').value = '';
+            el('customTriviaQuestionsInput').value = '[]';
+            return;
+          }
+          const pack = packs.find((item) => item.slug === selectedSlug);
+          if (!pack) return;
+          el('customTriviaPackNameInput').value = pack.name || '';
+          el('customTriviaPackSlugInput').value = pack.slug || '';
+          el('customTriviaPackDescriptionInput').value = pack.description || '';
+          el('customTriviaQuestionsInput').value = JSON.stringify(pack.questions || [], null, 2);
+        };
+
+        const renderManualEditor = () => {
+          const profiles = (latestState && latestState.profiles) || [];
+          el('profileSelect').innerHTML = profiles.length ? profiles.map((item) => `<option value="${item.name}">${item.name}</option>`).join('') : '<option value="">No profiles</option>';
+          loadSelectedProfile();
+          const tournament = (latestState && latestState.tournament) || {};
+          el('manualTournamentNameInput').value = tournament.name || 'House Tournament';
+          el('manualTournamentTargetInput').value = tournament.target_score || 10;
+          el('manualTournamentEnabledSelect').value = String(!!tournament.enabled);
+          const packs = ((latestState && latestState.trivia && latestState.trivia.custom_packs) || []);
+          el('customTriviaPackSelect').innerHTML = '<option value="">New pack</option>' + packs.map((item) => `<option value="${item.slug}">${item.name} (${item.question_count || (item.questions || []).length})</option>`).join('');
+          if (!el('customTriviaPackSelect').value) {
+            el('customTriviaQuestionsInput').value = el('customTriviaQuestionsInput').value || '[]';
+          }
+        };
+
+        window.renderManualEditor = renderManualEditor;
+        el('profileSelect').addEventListener('change', loadSelectedProfile);
+        el('customTriviaPackSelect').addEventListener('change', loadSelectedCustomPack);
+        el('saveProfileBtn').addEventListener('click', async () => {
+          try {
+            await hostAction('update_profile', {
+              player_name: el('profileSelect').value,
+              updates: {
+                games_played: parseInt(el('profileGamesPlayedInput').value || '0', 10),
+                card_round_wins: parseInt(el('profileCardWinsInput').value || '0', 10),
+                trivia_correct: parseInt(el('profileTriviaCorrectInput').value || '0', 10),
+                trivia_answered: parseInt(el('profileTriviaAnsweredInput').value || '0', 10),
+                buzzes: parseInt(el('profileBuzzesInput').value || '0', 10),
+                steal_wins: parseInt(el('profileStealsInput').value || '0', 10),
+                tournament_wins: parseInt(el('profileTournamentWinsInput').value || '0', 10),
+                total_points: parseInt(el('profileTotalPointsInput').value || '0', 10),
+              },
+            });
+            setNotice('manualEditorNotice', 'Profile saved.', 'success');
+          } catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('resetProfileBtn').addEventListener('click', async () => {
+          try { await hostAction('reset_profile', { player_name: el('profileSelect').value }); setNotice('manualEditorNotice', 'Profile reset.', 'success'); }
+          catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('deleteProfileBtn').addEventListener('click', async () => {
+          try { await hostAction('delete_profile', { player_name: el('profileSelect').value }); setNotice('manualEditorNotice', 'Profile deleted.', 'success'); }
+          catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('saveTournamentEditorBtn').addEventListener('click', async () => {
+          try {
+            await hostAction('update_tournament_settings', {
+              name: el('manualTournamentNameInput').value,
+              target_score: parseInt(el('manualTournamentTargetInput').value || '10', 10),
+              enabled: el('manualTournamentEnabledSelect').value === 'true',
+            });
+            setNotice('manualEditorNotice', 'Tournament settings saved.', 'success');
+          } catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('clearTournamentHistoryBtn').addEventListener('click', async () => {
+          try { await hostAction('clear_tournament_history'); setNotice('manualEditorNotice', 'Tournament history cleared.', 'success'); }
+          catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('saveCustomTriviaPackBtn').addEventListener('click', async () => {
+          try {
+            const questions = JSON.parse(el('customTriviaQuestionsInput').value || '[]');
+            await hostAction('save_custom_trivia_pack', {
+              slug: el('customTriviaPackSlugInput').value,
+              name: el('customTriviaPackNameInput').value,
+              description: el('customTriviaPackDescriptionInput').value,
+              questions,
+            });
+            setNotice('manualEditorNotice', 'Custom trivia pack saved.', 'success');
+          } catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+        el('deleteCustomTriviaPackBtn').addEventListener('click', async () => {
+          try { await hostAction('delete_custom_trivia_pack', { slug: el('customTriviaPackSlugInput').value || el('customTriviaPackSelect').value }); setNotice('manualEditorNotice', 'Custom trivia pack deleted.', 'success'); }
+          catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
+        });
+      }
+
+      ensureExtraHostTools(); if (window.renderAiModerationQueue) window.renderAiModerationQueue();
+      ensureManualHostEditor(); if (window.renderManualEditor) window.renderManualEditor();
+      applyModeLayout();
+      bootstrapHost().catch(() => {});
+      fetchState();
+      connectWebSocket();
+      if (nameFromUrl && el('playerNameInput')) el('playerNameInput').value = decodeURIComponent(nameFromUrl);
+      if (joinCodeFromUrl) el('playerNameInput').focus();
+      if (isTvMode()) document.title = 'HA Card Game TV Mode';
+    </script>
+  </body>
+</html>
