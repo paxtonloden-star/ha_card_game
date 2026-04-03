@@ -182,7 +182,7 @@ class CardGameWebSocketView(BaseCardGameView):
         return ws
 
 
-class CardGameHostBootstrapView(BaseCardGameHustView):
+class CardGameHostBootstrapView(BaseCardGameHostView):
     url = f"/api/{DOMAIN}/host/bootstrap"
     name = f"api:{DOMAIN}:host_bootstrap"
 
@@ -484,7 +484,7 @@ class CardGameHostActionView(BaseCardGameHostView):
         return self.json({"ok": True, "state": self.coordinator.player_state(None)})
 
 
-class CardGameHostPresetExportView(BaseCardGameHustView):
+class CardGameHostPresetExportView(BaseCardGameHostView):
     url = f"/api/{DOMAIN}/host/presets/export"
     name = f"api:{DOMAIN}:host_preset_export"
 
@@ -499,7 +499,7 @@ class CardGameHostPresetExportView(BaseCardGameHustView):
         )
 
 
-class CardGameHostDeckExportView(BaseCardGameHustView):
+class CardGameHostDeckExportView(BaseCardGameHostView):
     url = f"/api/{DOMAIN}/host/decks/export"
     name = f"api:{DOMAIN}:host_deck_export"
 
