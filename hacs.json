@@ -1,8 +1,10 @@
 {
   "name": "HA Card Game",
   "content_in_root": false,
-  "filename": "custom_components/ha_card_game/manifest.json",
-  "country": ["US"],
-  "homeassistant": "2025.1.0",
-  "render_readme": true
+  "filename": "hacs.json",
+  "country": "US",
+  "homeassistant": ">=2024.6.0",
+  "domains": ["ha_card_game"],
+  "render_readme": true,
+  "zip_release": false
 }
