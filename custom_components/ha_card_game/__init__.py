@@ -27,6 +27,7 @@ from .const import (
 from .coordinator import CardGameCoordinator
 from .panel import async_register_panel
 from .repairs import ISSUE_DUPLICATE_ENTRIES, async_sync_repairs
+from .trivia_backend_patch import apply_trivia_backend_patch
 
 SERVICE_PLAYER_NAME = "player_name"
 SERVICE_CARD_TEXT = "card_text"
@@ -44,6 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     coordinator = CardGameCoordinator(hass)
+    apply_trivia_backend_patch(coordinator)
     await coordinator.async_load()
     await coordinator.async_apply_options({**entry.data, **entry.options})
 

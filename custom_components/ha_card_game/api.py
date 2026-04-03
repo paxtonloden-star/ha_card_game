@@ -182,7 +182,7 @@ class CardGameWebSocketView(BaseCardGameView):
         return ws
 
 
-class CardGameHostBootstrapView(BaseCardGameHostView):
+class CardGameHostBootstrapView(BaseCardGameHustView):
     url = f"/api/{DOMAIN}/host/bootstrap"
     name = f"api:{DOMAIN}:host_bootstrap"
 
@@ -261,7 +261,16 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                     "export_url": f"/api/{DOMAIN}/host/decks/export",
                 },
                 "ai": {"settings": self.coordinator.ai_generator.settings.as_dict()},
-                "trivia": {"categories": ["history","fun_facts","geography","movies","1990s","2000s","2010s","computer_games"], "age_ranges": ["6_8","9_12","13_17","18_plus"], "teams": ["Solo", "Team A", "Team B"], "buzzer_modes": [False, True], "sources": ["ai", "offline_curated"]},
+                "trivia": {
+                    "categories": list(self.coordinator._available_offline_trivia_categories()),
+                    "age_ranges": ["6_8","9_12","13_17","18_plus"],
+                    "teams": ["Solo", "Team A", "Team B"],
+                    "buzzer_modes": [False, True],
+                    "sources": ["ai", "offline_curated"],
+                    "answer_seconds": int(getattr(self.coordinator, "trivia_answer_seconds", 15)),
+                    "reveal_seconds": int(getattr(self.coordinator, "trivia_reveal_seconds", 5)),
+                    "auto_cycle_enabled": bool(getattr(self.coordinator, "trivia_auto_cycle_enabled", True)),
+                },
                 "scene_media": dict(self.coordinator.scene_media_config),
                 "tournament": self.coordinator._tournament_state(),
                 "custom_trivia_packs": self.coordinator._custom_trivia_pack_summaries(),
@@ -382,8 +391,10 @@ class CardGameHostActionView(BaseCardGameHostView):
                 )
                 return self.json({"ok": True, "state": self.coordinator.player_state(None), "deck": deck_info})
             elif action == "prepare_trivia":
+                categories = data.get("categories")
                 await self.coordinator.async_prepare_trivia(
                     category=str(data.get("category", "fun_facts")).strip(),
+                    categories=[str(item).strip() for item in categories if str(item).strip()] if isinstance(categories, list) else None,
                     age_range=str(data.get("age_range", "18_plus")).strip(),
                     difficulty=str(data.get("difficulty")).strip() if data.get("difficulty") else None,
                     question_count=int(data.get("question_count", 10)),
@@ -400,6 +411,9 @@ class CardGameHostActionView(BaseCardGameHostView):
                     buzzer_mode=bool(data.get("buzzer_mode")) if data.get("buzzer_mode") is not None else None,
                     buzz_bonus=int(data.get("buzz_bonus")) if data.get("buzz_bonus") is not None else None,
                     steal_enabled=bool(data.get("steal_enabled")) if data.get("steal_enabled") is not None else None,
+                    answer_seconds=int(data.get("answer_seconds")) if data.get("answer_seconds") is not None else None,
+                    reveal_seconds=int(data.get("reveal_seconds")) if data.get("reveal_seconds") is not None else None,
+                    auto_cycle_enabled=bool(data.get("auto_cycle_enabled")) if data.get("auto_cycle_enabled") is not None else None,
                 )
             elif action == "assign_player_team":
                 await self.coordinator.async_assign_player_team(
@@ -470,7 +484,7 @@ class CardGameHostActionView(BaseCardGameHostView):
         return self.json({"ok": True, "state": self.coordinator.player_state(None)})
 
 
-class CardGameHostPresetExportView(BaseCardGameHostView):
+class CardGameHostPresetExportView(BaseCardGameHustView):
     url = f"/api/{DOMAIN}/host/presets/export"
     name = f"api:{DOMAIN}:host_preset_export"
 
@@ -485,7 +499,7 @@ class CardGameHostPresetExportView(BaseCardGameHostView):
         )
 
 
-class CardGameHostDeckExportView(BaseCardGameHostView):
+class CardGameHostDeckExportView(BaseCardGameHustView):
     url = f"/api/{DOMAIN}/host/decks/export"
     name = f"api:{DOMAIN}:host_deck_export"
 
