@@ -48,7 +48,27 @@ from .const import (
     TRIVIA_CATEGORIES,
 )
 
+CONF_TRIVIA_ANSWER_SECONDS = "trivia_answer_seconds"
+CONF_TRIVIA_REVEAL_SECONDS = "trivia_reveal_seconds"
+CONF_TRIVIA_AUTO_CYCLE_ENABLED = "trivia_auto_cycle_enabled"
+CONF_TRIVIA_TTS_ENABLED = "trivia_tts_enabled"
+CONF_TRIVIA_TTS_ENTITY = "trivia_tts_entity"
+CONF_TRIVIA_TTS_MEDIA_PLAYERS = "trivia_tts_media_players"
+CONF_TRIVIA_TTS_HOST_STYLE = "trivia_tts_host_style"
+CONF_TRIVIA_TTS_ANNOUNCE_QUESTION = "trivia_tts_announce_question"
+CONF_TRIVIA_TTS_ANNOUNCE_RESULTS = "trivia_tts_announce_results"
 
+DEFAULT_TRIVIA_ANSWER_SECONDS = 15
+DEFAULT_TRIVIA_REVEAL_SECONDS = 5
+DEFAULT_TRIVIA_AUTO_CYCLE_ENABLED = True
+DEFAULT_TRIVIA_TTS_ENABLED = False
+DEFAULT_TRIVIA_TTS_ENTITY = ""
+DEFAULT_TRIVIA_TTS_MEDIA_PLAYERS: list[str] = []
+DEFAULT_TRIVIA_TTS_HOST_STYLE = "game_show"
+DEFAULT_TRIVIA_TTS_ANNOUNCE_QUESTION = True
+DEFAULT_TRIVIA_TTS_ANNOUNCE_RESULTS = True
+
+TRIVIA_TTS_HOST_STYLE_OPTIONS = ["game_show", "friendly_quiz"]
 GAME_MODE_OPTIONS = [GAME_MODE_CARDS, GAME_MODE_JUDGE_PARTY, GAME_MODE_TRIVIA]
 TRIVIA_SOURCE_OPTIONS = ["offline_curated", "ai"]
 
@@ -92,7 +112,6 @@ class HACardGameConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", data_schema=_user_schema(user_input), errors=errors)
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Reconfigure the single existing config entry."""
         entries = self.hass.config_entries.async_entries(DOMAIN)
         if not entries:
             return self.async_abort(reason="no_config_entry")
@@ -127,7 +146,7 @@ class HACardGameOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["general", "content", "remote", "ai", "trivia", "finish"],
+            menu_options=["general", "content", "remote", "ai", "trivia", "trivia_tts", "finish"],
         )
 
     async def async_step_general(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -144,6 +163,9 @@ class HACardGameOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_trivia(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         return await self._async_show_and_update("trivia", _trivia_schema, user_input)
+
+    async def async_step_trivia_tts(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        return await self._async_show_and_update("trivia_tts", _trivia_tts_schema, user_input)
 
     async def async_step_finish(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         normalized = _normalize_options(self._options, previous={**self._config_entry.data, **self._config_entry.options})
@@ -180,6 +202,21 @@ def _normalize_options(user_input: dict[str, Any], previous: dict[str, Any]) -> 
     normalized[CONF_AI_ENDPOINT] = _normalize_url(merged.get(CONF_AI_ENDPOINT, DEFAULT_AI_ENDPOINT))
     normalized[CONF_REMOTE_BASE_URL] = _normalize_url(merged.get(CONF_REMOTE_BASE_URL, DEFAULT_REMOTE_BASE_URL))
     normalized[CONF_AI_API_KEY] = _normalize_api_key(merged.get(CONF_AI_API_KEY, previous.get(CONF_AI_API_KEY, "")))
+    normalized[CONF_TRIVIA_ANSWER_SECONDS] = int(merged.get(CONF_TRIVIA_ANSWER_SECONDS, DEFAULT_TRIVIA_ANSWER_SECONDS))
+    normalized[CONF_TRIVIA_REVEAL_SECONDS] = int(merged.get(CONF_TRIVIA_REVEAL_SECONDS, DEFAULT_TRIVIA_REVEAL_SECONDS))
+    normalized[CONF_TRIVIA_AUTO_CYCLE_ENABLED] = bool(merged.get(CONF_TRIVIA_AUTO_CYCLE_ENABLED, DEFAULT_TRIVIA_AUTO_CYCLE_ENABLED))
+    normalized[CONF_TRIVIA_TTS_ENABLED] = bool(merged.get(CONF_TRIVIA_TTS_ENABLED, DEFAULT_TRIVIA_TTS_ENABLED))
+    normalized[CONF_TRIVIA_TTS_ENTITY] = str(merged.get(CONF_TRIVIA_TTS_ENTITY, DEFAULT_TRIVIA_TTS_ENTITY) or "").strip()
+    normalized[CONF_TRIVIA_TTS_HOST_STYLE] = str(merged.get(CONF_TRIVIA_TTS_HOST_STYLE, DEFAULT_TRIVIA_TTS_HOST_STYLE) or DEFAULT_TRIVIA_TTS_HOST_STYLE).strip()
+    normalized[CONF_TRIVIA_TTS_ANNOUNCE_QUESTION] = bool(merged.get(CONF_TRIVIA_TTS_ANNOUNCE_QUESTION, DEFAULT_TRIVIA_TTS_ANNOUNCE_QUESTION))
+    normalized[CONF_TRIVIA_TTS_ANNOUNCE_RESULTS] = bool(merged.get(CONF_TRIVIA_TTS_ANNOUNCE_RESULTS, DEFAULT_TRIVIA_TTS_ANNOUNCE_RESULTS))
+
+    media_players = merged.get(CONF_TRIVIA_TTS_MEDIA_PLAYERS, previous.get(CONF_TRIVIA_TTS_MEDIA_PLAYERS, DEFAULT_TRIVIA_TTS_MEDIA_PLAYERS))
+    if isinstance(media_players, str):
+        media_players = [media_players]
+    else:
+        media_players = list(media_players or [])
+    normalized[CONF_TRIVIA_TTS_MEDIA_PLAYERS] = [str(item).strip() for item in media_players if str(item).strip()]
 
     if normalized[CONF_MAX_ROUNDS] < 1 or normalized[CONF_MAX_ROUNDS] > 100:
         raise vol.Invalid("round_range", path=[CONF_MAX_ROUNDS])
@@ -189,6 +226,12 @@ def _normalize_options(user_input: dict[str, Any], previous: dict[str, Any]) -> 
         raise vol.Invalid("invalid_trivia_source", path=[CONF_DEFAULT_TRIVIA_SOURCE])
     if normalized[CONF_CONTENT_MODE] not in PARENTAL_CONTENT_MODES:
         raise vol.Invalid("invalid_content_mode", path=[CONF_CONTENT_MODE])
+    if normalized[CONF_TRIVIA_ANSWER_SECONDS] < 3 or normalized[CONF_TRIVIA_ANSWER_SECONDS] > 120:
+        raise vol.Invalid("invalid_trivia_answer_seconds", path=[CONF_TRIVIA_ANSWER_SECONDS])
+    if normalized[CONF_TRIVIA_REVEAL_SECONDS] < 1 or normalized[CONF_TRIVIA_REVEAL_SECONDS] > 60:
+        raise vol.Invalid("invalid_trivia_reveal_seconds", path=[CONF_TRIVIA_REVEAL_SECONDS])
+    if normalized[CONF_TRIVIA_TTS_HOST_STYLE] not in TRIVIA_TTS_HOST_STYLE_OPTIONS:
+        raise vol.Invalid("invalid_trivia_tts_host_style", path=[CONF_TRIVIA_TTS_HOST_STYLE])
 
     categories = merged.get(CONF_ALLOWED_TRIVIA_CATEGORIES, previous.get(CONF_ALLOWED_TRIVIA_CATEGORIES, list(TRIVIA_CATEGORIES)))
     if isinstance(categories, dict):
@@ -205,6 +248,7 @@ def _normalize_options(user_input: dict[str, Any], previous: dict[str, Any]) -> 
         CONF_AI_API_KEY,
         CONF_AI_ENDPOINT,
         CONF_REMOTE_BASE_URL,
+        CONF_TRIVIA_TTS_MEDIA_PLAYERS,
     } if key in normalized}
 
 
@@ -275,5 +319,31 @@ def _trivia_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Optional(CONF_ALLOWED_TRIVIA_CATEGORIES, default=defaults.get(CONF_ALLOWED_TRIVIA_CATEGORIES, list(TRIVIA_CATEGORIES))): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=TRIVIA_CATEGORIES, multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)
             ),
+            vol.Optional(CONF_TRIVIA_ANSWER_SECONDS, default=defaults.get(CONF_TRIVIA_ANSWER_SECONDS, DEFAULT_TRIVIA_ANSWER_SECONDS)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=3, max=120, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional(CONF_TRIVIA_REVEAL_SECONDS, default=defaults.get(CONF_TRIVIA_REVEAL_SECONDS, DEFAULT_TRIVIA_REVEAL_SECONDS)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=60, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional(CONF_TRIVIA_AUTO_CYCLE_ENABLED, default=defaults.get(CONF_TRIVIA_AUTO_CYCLE_ENABLED, DEFAULT_TRIVIA_AUTO_CYCLE_ENABLED)): selector.BooleanSelector(),
+        }
+    )
+
+
+def _trivia_tts_schema(defaults: dict[str, Any]) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Optional(CONF_TRIVIA_TTS_ENABLED, default=defaults.get(CONF_TRIVIA_TTS_ENABLED, DEFAULT_TRIVIA_TTS_ENABLED)): selector.BooleanSelector(),
+            vol.Optional(CONF_TRIVIA_TTS_ENTITY, default=defaults.get(CONF_TRIVIA_TTS_ENTITY, DEFAULT_TRIVIA_TTS_ENTITY)): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="tts")
+            ),
+            vol.Optional(CONF_TRIVIA_TTS_MEDIA_PLAYERS, default=defaults.get(CONF_TRIVIA_TTS_MEDIA_PLAYERS, DEFAULT_TRIVIA_TTS_MEDIA_PLAYERS)): selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="media_player", multiple=True)
+            ),
+            vol.Optional(CONF_TRIVIA_TTS_HOST_STYLE, default=defaults.get(CONF_TRIVIA_TTS_HOST_STYLE, DEFAULT_TRIVIA_TTS_HOST_STYLE)): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=TRIVIA_TTS_HOST_STYLE_OPTIONS, mode=selector.SelectSelectorMode.DROPDOWN)
+            ),
+            vol.Optional(CONF_TRIVIA_TTS_ANNOUNCE_QUESTION, default=defaults.get(CONF_TRIVIA_TTS_ANNOUNCE_QUESTION, DEFAULT_TRIVIA_TTS_ANNOUNCE_QUESTION)): selector.BooleanSelector(),
+            vol.Optional(CONF_TRIVIA_TTS_ANNOUNCE_RESULTS, default=defaults.get(CONF_TRIVIA_TTS_ANNOUNCE_RESULTS, DEFAULT_TRIVIA_TTS_ANNOUNCE_RESULTS)): selector.BooleanSelector(),
         }
     )

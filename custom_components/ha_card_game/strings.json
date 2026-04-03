@@ -1,56 +1,66 @@
 {
   "config": {
-    "abort": {
-      "single_instance_allowed": "HA Card Game is already configured. Open the existing integration in Devices & Services, or remove the old entry before adding it again.",
-      "no_config_entry": "No HA Card Game config entry exists yet.",
-      "reconfigure_successful": "HA Card Game was updated successfully."
-    },
     "step": {
       "user": {
         "title": "Set up HA Card Game",
-        "description": "Create the main card game entry and choose the default runtime behavior.",
         "data": {
           "enable_panel": "Enable sidebar panel",
           "max_rounds": "Maximum rounds",
-          "allow_repeat_prompts": "Allow repeating prompts",
+          "allow_repeat_prompts": "Allow repeat prompts",
           "default_game_mode": "Default game mode"
         }
       },
       "reconfigure": {
         "title": "Reconfigure HA Card Game",
-        "description": "Update the single existing HA Card Game entry.",
         "data": {
           "enable_panel": "Enable sidebar panel",
           "max_rounds": "Maximum rounds",
-          "allow_repeat_prompts": "Allow repeating prompts",
+          "allow_repeat_prompts": "Allow repeat prompts",
           "default_game_mode": "Default game mode"
         }
       }
     },
+    "abort": {
+      "single_instance_allowed": "Only one HA Card Game integration can be configured.",
+      "reconfigure_successful": "Configuration updated successfully.",
+      "no_config_entry": "No existing HA Card Game configuration was found."
+    },
     "error": {
-      "invalid_url": "Enter a valid http or https URL.",
+      "invalid_url": "Enter a valid URL.",
       "round_range": "Rounds must be between 1 and 100.",
-      "invalid_game_mode": "Choose a supported game mode.",
-      "invalid_trivia_source": "Choose a supported trivia source.",
-      "invalid_content_mode": "Choose a supported content mode."
+      "invalid_game_mode": "Choose a valid game mode.",
+      "invalid_trivia_source": "Choose a valid trivia source.",
+      "invalid_content_mode": "Choose a valid content mode.",
+      "invalid_trivia_answer_seconds": "Answer seconds must be between 3 and 120.",
+      "invalid_trivia_reveal_seconds": "Reveal seconds must be between 1 and 60.",
+      "invalid_trivia_tts_host_style": "Choose a valid trivia host style."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Configure HA Card Game"
+        "title": "HA Card Game options",
+        "menu_options": {
+          "general": "General",
+          "content": "Content & safety",
+          "remote": "Remote access",
+          "ai": "AI",
+          "trivia": "Trivia",
+          "trivia_tts": "Trivia TTS",
+          "finish": "Save"
+        }
       },
       "general": {
         "title": "General settings",
         "data": {
           "enable_panel": "Enable sidebar panel",
           "max_rounds": "Maximum rounds",
-          "allow_repeat_prompts": "Allow repeating prompts",
+          "allow_repeat_prompts": "Allow repeat prompts",
           "default_game_mode": "Default game mode"
         }
       },
       "content": {
-        "title": "Content and safety",
+        "title": "Content & safety",
         "data": {
           "content_mode": "Content mode",
           "require_ai_approval": "Require AI approval",
@@ -59,7 +69,6 @@
       },
       "remote": {
         "title": "Remote access",
-        "description": "Optionally override the external URL used to generate player invite links.",
         "data": {
           "remote_base_url": "Remote base URL"
         }
@@ -68,7 +77,7 @@
         "title": "AI settings",
         "data": {
           "ai_enabled": "Enable AI generation",
-          "ai_use_local_fallback": "Use local fallback when AI is unavailable",
+          "ai_use_local_fallback": "Use local fallback",
           "ai_model": "AI model",
           "ai_endpoint": "AI endpoint",
           "ai_api_key": "AI API key"
@@ -78,34 +87,34 @@
         "title": "Trivia settings",
         "data": {
           "default_trivia_source": "Default trivia source",
-          "allowed_trivia_categories": "Allowed trivia categories"
+          "allowed_trivia_categories": "Allowed trivia categories",
+          "trivia_answer_seconds": "Answer countdown seconds",
+          "trivia_reveal_seconds": "Reveal seconds before next question",
+          "trivia_auto_cycle_enabled": "Automatically move to next trivia question"
+        }
+      },
+      "trivia_tts": {
+        "title": "Trivia TTS",
+        "description": "Optional spoken trivia announcements. Select a TTS entity and one or more media players. If your selected TTS entity is backed by OpenAI, these announcements will use that voice.",
+        "data": {
+          "trivia_tts_enabled": "Enable trivia TTS",
+          "trivia_tts_entity": "TTS entity",
+          "trivia_tts_media_players": "Media players",
+          "trivia_tts_host_style": "Host style",
+          "trivia_tts_announce_question": "Read each question aloud",
+          "trivia_tts_announce_results": "Read the correct answer and winners"
         }
       }
     },
     "error": {
-      "invalid_url": "Enter a valid http or https URL.",
+      "invalid_url": "Enter a valid URL.",
       "round_range": "Rounds must be between 1 and 100.",
-      "invalid_game_mode": "Choose a supported game mode.",
-      "invalid_trivia_source": "Choose a supported trivia source.",
-      "invalid_content_mode": "Choose a supported content mode."
-    }
-  },
-  "issues": {
-    "remote_players_without_base_url": {
-      "title": "Remote players enabled without a Home Assistant external URL",
-      "description": "Remote players are enabled, but HA Card Game could not determine an external URL for Home Assistant. Configure an external URL, Home Assistant Cloud, or a trusted VPN before inviting remote players."
-    },
-    "ai_enabled_without_key_or_fallback": {
-      "title": "AI generation enabled without an API key or fallback",
-      "description": "AI generation is enabled, but no API key is configured and local fallback is disabled. Add an API key through the options flow or re-enable local fallback."
-    },
-    "no_trivia_categories_enabled": {
-      "title": "No trivia categories are enabled",
-      "description": "Trivia is enabled, but no valid trivia categories are available. Reopen the options flow and enable at least one category."
-    },
-    "duplicate_entries": {
-      "title": "Duplicate HA Card Game entries detected",
-      "description": "Only one HA Card Game config entry is supported. Remove any duplicate entries from Devices & Services or restore a backup with a single entry."
+      "invalid_game_mode": "Choose a valid game mode.",
+      "invalid_trivia_source": "Choose a valid trivia source.",
+      "invalid_content_mode": "Choose a valid content mode.",
+      "invalid_trivia_answer_seconds": "Answer seconds must be between 3 and 120.",
+      "invalid_trivia_reveal_seconds": "Reveal seconds must be between 1 and 60.",
+      "invalid_trivia_tts_host_style": "Choose a valid trivia host style."
     }
   }
 }
