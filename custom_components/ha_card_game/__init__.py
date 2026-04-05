@@ -45,7 +45,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     coordinator = TriviaCoreCoordinator(hass)
-    apply_trivia_backend_patch(coordinator)
+    
     await coordinator.async_load()
     await coordinator.async_apply_options({**entry.data, **entry.options})
 
