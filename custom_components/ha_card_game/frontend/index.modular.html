@@ -37,7 +37,14 @@
           #triviaQuestionPrompt { margin-bottom: 12px; padding: 14px 16px; border-radius: 16px; background: rgba(124,156,255,.10); border: 1px solid rgba(124,156,255,.24); }
           #triviaQuestionPrompt .q-row { display: flex; gap: 12px; align-items: flex-start; }
           #triviaQuestionPrompt .q-badge { flex: 0 0 auto; font-size: 28px; font-weight: 900; line-height: 1; color: #9bb6ff; }
+          #triviaQuestionPrompt .q-body { min-width: 0; flex: 1 1 auto; }
           #triviaQuestionPrompt .q-text { font-size: 18px; font-weight: 700; line-height: 1.35; color: #fff; }
+          #triviaQuestionPrompt .q-timer-row { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+          #triviaQuestionPrompt .q-timer-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; opacity: .7; }
+          #triviaQuestionPrompt .q-timer-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 70px; padding: 6px 10px; border-radius: 999px; font-weight: 800; background: rgba(124,156,255,.18); border: 1px solid rgba(124,156,255,.25); }
+          #triviaQuestionPrompt .q-timer-badge.warning { background: rgba(245, 158, 11, .18); border-color: rgba(245, 158, 11, .35); color: #ffd089; }
+          #triviaQuestionPrompt .q-timer-badge.danger { background: rgba(239, 68, 68, .18); border-color: rgba(239, 68, 68, .35); color: #ffb0b0; }
+          #triviaQuestionPrompt .q-timer-note { font-size: 12px; opacity: .72; }
           #hostModePanel.card { margin-bottom: 16px; border: 1px solid rgba(124,156,255,.24); background: rgba(124,156,255,.08); }
           #hostModePanel .control-grid { margin-bottom: 12px; }
           .host-section details { border: 1px solid rgba(255,255,255,.08); border-radius: 14px; background: rgba(10,16,32,.45); margin-top: 12px; overflow: hidden; }
@@ -93,6 +100,38 @@
         return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
       }
 
+      function formatTimerValue(totalSeconds, endsAt) {
+        if (!totalSeconds || !endsAt) return 'No timer';
+        const remaining = Math.max(0, Math.ceil(endsAt - Date.now() / 1000));
+        const minutes = Math.floor(remaining / 60);
+        const seconds = String(remaining % 60).padStart(2, '0');
+        return `${minutes}:${seconds}`;
+      }
+
+      function renderQuestionTimer(win, doc, state) {
+        const badge = doc.getElementById('triviaQuestionTimerBadge');
+        const note = doc.getElementById('triviaQuestionTimerNote');
+        if (!badge || !note) return;
+        const isTrivia = state?.game_mode === 'trivia';
+        const totalSeconds = Number(state?.round_timer_duration || state?.trivia?.answer_seconds || 0);
+        const endsAt = Number(state?.round_timer_ends_at || 0);
+        badge.style.display = isTrivia ? 'inline-flex' : 'none';
+        note.style.display = isTrivia ? '' : 'none';
+        if (!isTrivia) return;
+        badge.textContent = formatTimerValue(totalSeconds, endsAt);
+        const remaining = endsAt ? Math.max(0, Math.ceil(endsAt - Date.now() / 1000)) : 0;
+        badge.classList.toggle('warning', remaining <= 15 && remaining > 5);
+        badge.classList.toggle('danger', remaining <= 5 && remaining > 0);
+        if (state?.state === 'results') {
+          const revealSeconds = Number(state?.trivia?.reveal_seconds || 5);
+          note.textContent = `Answer shown now${revealSeconds > 0 ? ` · next question after about ${revealSeconds}s` : ''}`;
+        } else if (totalSeconds && endsAt) {
+          note.textContent = 'Time remaining to answer';
+        } else {
+          note.textContent = 'Timer starts when the trivia round begins';
+        }
+      }
+
       function ensureTriviaQuestionPrompt(win, doc, state) {
         const submitPanel = doc.getElementById('submitPanel');
         const handList = doc.getElementById('handList');
@@ -101,7 +140,7 @@
         if (!prompt) {
           prompt = doc.createElement('div');
           prompt.id = 'triviaQuestionPrompt';
-          prompt.innerHTML = '<div class="q-row"><div class="q-badge">Q:</div><div class="q-text"></div></div>';
+          prompt.innerHTML = '<div class="q-row"><div class="q-badge">Q:</div><div class="q-body"><div class="q-text"></div><div class="q-timer-row"><span class="q-timer-label">Timer</span><span class="q-timer-badge" id="triviaQuestionTimerBadge">No timer</span><span class="q-timer-note" id="triviaQuestionTimerNote">Timer starts when the trivia round begins</span></div></div></div>';
           submitPanel.insertBefore(prompt, handList);
         }
         const isTrivia = state?.game_mode === 'trivia';
@@ -109,6 +148,7 @@
         prompt.style.display = isTrivia ? '' : 'none';
         const textNode = prompt.querySelector('.q-text');
         if (textNode) textNode.textContent = questionText || 'Waiting for the next trivia question…';
+        renderQuestionTimer(win, doc, state);
       }
 
       function createSection(doc, hostControls, id, title, open) {
@@ -329,6 +369,18 @@
           attempts += 1;
           if (tryEnhanceLegacy() || attempts > 80) clearInterval(timer);
         }, 250);
+        let timerLoop = null;
+        const startTimerLoop = () => {
+          if (timerLoop) clearInterval(timerLoop);
+          timerLoop = setInterval(() => {
+            try {
+              const win = frame.contentWindow;
+              const doc = frame.contentDocument;
+              if (win?.latestState && doc) renderQuestionTimer(win, doc, win.latestState);
+            } catch (_err) {}
+          }, 1000);
+        };
+        startTimerLoop();
       });
     </script>
   </body>
