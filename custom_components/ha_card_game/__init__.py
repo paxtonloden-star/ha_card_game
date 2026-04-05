@@ -6,9 +6,8 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.exceptions import ConfigEntryError
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ConfigEntryError, HomeAssistantError
 
 from .api import async_register_api
 from .const import (
@@ -24,9 +23,9 @@ from .const import (
     SERVICE_START_GAME,
     SERVICE_SUBMIT_CARD,
 )
-from .coordinator import CardGameCoordinator
 from .panel import async_register_panel
 from .repairs import ISSUE_DUPLICATE_ENTRIES, async_sync_repairs
+from .trivia_core_coordinator import TriviaCoreCoordinator
 
 SERVICE_PLAYER_NAME = "player_name"
 SERVICE_CARD_TEXT = "card_text"
@@ -43,7 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             translation_key=ISSUE_DUPLICATE_ENTRIES,
         )
 
-    coordinator = CardGameCoordinator(hass)
+    coordinator = TriviaCoreCoordinator(hass)
     await coordinator.async_load()
     await coordinator.async_apply_options({**entry.data, **entry.options})
 
@@ -72,7 +71,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    coordinator: CardGameCoordinator | None = getattr(entry, "runtime_data", None)
+    coordinator: TriviaCoreCoordinator | None = getattr(entry, "runtime_data", None)
     if coordinator is None:
         return
     panel_enabled = entry.options.get(CONF_ENABLE_PANEL, entry.data.get(CONF_ENABLE_PANEL, True))
@@ -82,7 +81,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await async_sync_repairs(hass, entry, coordinator)
 
 
-async def _async_register_services(hass: HomeAssistant, coordinator: CardGameCoordinator) -> None:
+async def _async_register_services(hass: HomeAssistant, coordinator: TriviaCoreCoordinator) -> None:
     if hass.services.has_service(DOMAIN, SERVICE_START_GAME):
         return
 
