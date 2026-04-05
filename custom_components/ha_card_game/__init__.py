@@ -74,7 +74,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    coordinator: CardGameCoordinator | None = getattr(entry, "runtime_data", None)
+    coordinator: TriviaCoreCoordinator | None = getattr(entry, "runtime_data", None)
     if coordinator is None:
         return
     panel_enabled = entry.options.get(CONF_ENABLE_PANEL, entry.data.get(CONF_ENABLE_PANEL, True))
@@ -84,7 +84,7 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await async_sync_repairs(hass, entry, coordinator)
 
 
-async def _async_register_services(hass: HomeAssistant, coordinator: CardGameCoordinator) -> None:
+async def _async_register_services(hass: HomeAssistant, coordinator: TriviaCoreCoordinator) -> None:
     if hass.services.has_service(DOMAIN, SERVICE_START_GAME):
         return
 
