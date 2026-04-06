@@ -23,6 +23,7 @@ from .const import (
     SERVICE_START_GAME,
     SERVICE_SUBMIT_CARD,
 )
+
 from .panel import async_register_panel
 from .repairs import ISSUE_DUPLICATE_ENTRIES, async_sync_repairs
 from .trivia_core_coordinator import TriviaCoreCoordinator
@@ -43,6 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     coordinator = TriviaCoreCoordinator(hass)
+    
     await coordinator.async_load()
     await coordinator.async_apply_options({**entry.data, **entry.options})
 
@@ -58,6 +60,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_register_services(hass, coordinator)
     await async_sync_repairs(hass, entry, coordinator)
     return True
+
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
