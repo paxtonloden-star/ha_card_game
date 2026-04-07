@@ -7,7 +7,7 @@ import math
 import time
 from typing import Any
 
-from .const import GAME_MODE_TRIVIA, TRIVIA_DIFFICULTY_BY_AGE
+from .const import DOMAIN, GAME_MODE_TRIVIA, TRIVIA_DIFFICULTY_BY_AGE
 from .coordinator import CardGameCoordinator
 from .moderation import moderate_trivia_questions
 from .trivia_manager import get_curated_trivia_questions
@@ -26,7 +26,11 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         self.trivia_reveal_seconds = 5
         self.trivia_auto_cycle_enabled = True
         self._trivia_cycle_task: asyncio.Task | None = None
-
+    @property
+    def join_url(self) -> str:
+        if not self.base_url:
+            return f"/local/{DOMAIN}/index.modular.html?join={self.join_code}"
+        return f"{self.base_url}/local/{DOMAIN}/index.modular.html?join={self.join_code}"
     async def async_save(self) -> None:
         await super().async_save()
         self._sync_trivia_cycle()
