@@ -34,17 +34,137 @@
 
         const style = doc.createElement('style');
         style.textContent = `
-          #triviaQuestionPrompt { margin-bottom: 12px; padding: 14px 16px; border-radius: 16px; background: rgba(124,156,255,.10); border: 1px solid rgba(124,156,255,.24); }
+          #triviaQuestionPrompt, #playerPromptCard {
+            margin-bottom: 12px;
+            padding: 16px 18px;
+            border-radius: 18px;
+            position: relative;
+            overflow: hidden;
+            isolation: isolate;
+          }
+          #triviaQuestionPrompt {
+            background: rgba(124,156,255,.10);
+            border: 1px solid rgba(124,156,255,.24);
+          }
+          #playerPromptCard {
+            background: #111;
+            color: #fff;
+            border: 1px solid rgba(255,255,255,.18);
+            box-shadow: 0 18px 36px rgba(0,0,0,.28);
+          }
+          #playerPromptCard::before,
+          #triviaQuestionPrompt::before,
+          .enhanced-hand-card::before {
+            content: 'CARD GAMES';
+            position: absolute;
+            inset: auto 10px 8px auto;
+            font-size: 20px;
+            font-weight: 900;
+            letter-spacing: .14em;
+            opacity: .06;
+            pointer-events: none;
+            white-space: nowrap;
+            transform: rotate(-18deg);
+            z-index: -1;
+          }
+          #playerPromptCard::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,.05), transparent 28%);
+            pointer-events: none;
+          }
+          #playerPromptCard .prompt-label,
+          #triviaQuestionPrompt .q-badge {
+            flex: 0 0 auto;
+            font-size: 28px;
+            font-weight: 900;
+            line-height: 1;
+          }
+          #playerPromptCard .prompt-label { color: rgba(255,255,255,.86); }
+          #playerPromptCard .prompt-row,
           #triviaQuestionPrompt .q-row { display: flex; gap: 12px; align-items: flex-start; }
-          #triviaQuestionPrompt .q-badge { flex: 0 0 auto; font-size: 28px; font-weight: 900; line-height: 1; color: #9bb6ff; }
+          #playerPromptCard .prompt-body,
           #triviaQuestionPrompt .q-body { min-width: 0; flex: 1 1 auto; }
-          #triviaQuestionPrompt .q-text { font-size: 18px; font-weight: 700; line-height: 1.35; color: #fff; }
+          #playerPromptCard .prompt-text,
+          #triviaQuestionPrompt .q-text {
+            font-size: 19px;
+            font-weight: 800;
+            line-height: 1.36;
+          }
+          #playerPromptCard .prompt-meta {
+            margin-top: 10px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: .1em;
+            opacity: .7;
+            font-weight: 800;
+          }
+          #triviaQuestionPrompt .q-badge { color: #9bb6ff; }
           #triviaQuestionPrompt .q-timer-row { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
           #triviaQuestionPrompt .q-timer-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; opacity: .7; }
           #triviaQuestionPrompt .q-timer-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 70px; padding: 6px 10px; border-radius: 999px; font-weight: 800; background: rgba(124,156,255,.18); border: 1px solid rgba(124,156,255,.25); }
-          #triviaQuestionPrompt .q-timer-badge.warning { background: rgba(245, 158, 11, .18); border-color: rgba(245, 158, 11, .35); color: #ffd089; }
-          #triviaQuestionPrompt .q-timer-badge.danger { background: rgba(239, 68, 68, .18); border-color: rgba(239, 68, 68, .35); color: #ffb0b0; }
+          #triviaQuestionPrompt .q-timer-badge.warning { background: rgba(245,158,11,.18); border-color: rgba(245,158,11,.35); color: #ffd089; }
+          #triviaQuestionPrompt .q-timer-badge.danger { background: rgba(239,68,68,.18); border-color: rgba(239,68,68,.35); color: #ffb0b0; }
           #triviaQuestionPrompt .q-timer-note { font-size: 12px; opacity: .72; }
+          #handList.enhanced-card-hand {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+            gap: 14px;
+            align-items: stretch;
+          }
+          .enhanced-hand-card {
+            position: relative;
+            display: flex;
+            min-height: 220px;
+            padding: 16px;
+            border-radius: 18px;
+            background: #fff;
+            color: #111;
+            border: 1px solid rgba(0,0,0,.12);
+            box-shadow: 0 12px 28px rgba(0,0,0,.18);
+            overflow: hidden;
+            transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+          }
+          .enhanced-hand-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 18px 34px rgba(0,0,0,.22);
+          }
+          .enhanced-hand-card.selected {
+            border-color: rgba(67, 97, 238, .65);
+            box-shadow: 0 0 0 3px rgba(67,97,238,.12), 0 18px 34px rgba(0,0,0,.22);
+          }
+          .enhanced-hand-card .card-index {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 26px;
+            height: 26px;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 800;
+            background: rgba(17,17,17,.08);
+          }
+          .enhanced-hand-card .card-text {
+            margin-top: auto;
+            white-space: normal;
+            font-size: 20px;
+            line-height: 1.28;
+            font-weight: 700;
+          }
+          .enhanced-hand-card .card-brand {
+            position: absolute;
+            left: 14px;
+            top: 12px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .12em;
+            opacity: .72;
+            font-weight: 800;
+          }
           #hostModePanel.card { margin-bottom: 16px; border: 1px solid rgba(124,156,255,.24); background: rgba(124,156,255,.08); }
           #hostModePanel .control-grid { margin-bottom: 12px; }
           .host-section details { border: 1px solid rgba(255,255,255,.08); border-radius: 14px; background: rgba(10,16,32,.45); margin-top: 12px; overflow: hidden; }
@@ -121,15 +241,33 @@
         badge.textContent = formatTimerValue(totalSeconds, endsAt);
         const remaining = endsAt ? Math.max(0, Math.ceil(endsAt - Date.now() / 1000)) : 0;
         badge.classList.toggle('warning', remaining <= 15 && remaining > 5);
-        badge.classList.toggle('danger', remaining <= 5 && remaining > 0);
+        badge.classList.toggle('danger', remaining <= 5 && remaining >= 0);
         if (state?.state === 'results') {
           const revealSeconds = Number(state?.trivia?.reveal_seconds || 5);
-          note.textContent = `Answer shown now${revealSeconds > 0 ? ` · next question after about ${revealSeconds}s` : ''}`;
+          note.textContent = `Answer shown now${revealSeconds > 0 ? ` µ next question after about ${revealSeconds}s` : ''}`;
         } else if (totalSeconds && endsAt) {
           note.textContent = 'Time remaining to answer';
         } else {
           note.textContent = 'Timer starts when the trivia round begins';
         }
+      }
+
+      function ensurePromptCard(win, doc, state) {
+        const submitPanel = doc.getElementById('submitPanel');
+        const handList = doc.getElementById('handList');
+        if (!submitPanel || !handList) return;
+        let prompt = doc.getElementById('playerPromptCard');
+        if (!prompt) {
+          prompt = doc.createElement('div');
+          prompt.id = 'playerPromptCard';
+          prompt.innerHTML = '<div class="prompt-row"><div class="prompt-label">Q</div><div class="prompt-body"><div class="prompt-text"></div><div class="prompt-meta">Black card</div></div></div>';
+          submitPanel.insertBefore(prompt, handList);
+        }
+        const isCardsMode = state?.game_mode === 'cards' || state?.game_mode === 'judge_party';
+        const promptText = state?.current_prompt || '';
+        prompt.style.display = isCardsMode && promptText ? '' : 'none';
+        const textNode = prompt.querySelector('.prompt-text');
+        if (textNode) textNode.textContent = promptText || '';
       }
 
       function ensureTriviaQuestionPrompt(win, doc, state) {
@@ -149,6 +287,35 @@
         const textNode = prompt.querySelector('.q-text');
         if (textNode) textNode.textContent = questionText || 'Waiting for the next trivia question…';
         renderQuestionTimer(win, doc, state);
+      }
+
+      function enhanceHandCards(win, doc, state) {
+        const handList = doc.getElementById('handList');
+        if (!handList) return;
+        const isCardsMode = state?.game_mode === 'cards' || state?.game_mode === 'judge_party';
+        handList.classList.toggle('enhanced-card-hand', isCardsMode);
+        const cards = Array.from(handList.children || []);
+        cards.forEach((card, index) => {
+          if (!(card instanceof HTMLElement)) return;
+          if (!isCardsMode) {
+            card.classList.remove('enhanced-hand-card');
+            const brand = card.querySelector('.card-brand'); if (brand) brand.remove();
+            const idx = card.querySelector('.card-index'); if (idx) idx.remove();
+            const text = card.querySelector('.card-text');
+            if (text) {
+              card.textContent = text.textContent || '';
+            }
+            return;
+          }
+          const selected = card.classList.contains('selected') || card.getAttribute('aria-pressed') === 'true';
+          const originalText = (card.dataset.cardText || card.textContent || '').trim();
+          card.dataset.cardText = originalText;
+          card.classList.add('enhanced-hand-card');
+          card.classList.toggle('selected', selected);
+          card.innerHTML = `<div class="card-brand">Card Games</div><div class="card-index">${index + 1}</div><div class="card-text"></div>`;
+          const textNode = card.querySelector('.card-text');
+          if (textNode) textNode.textContent = originalText;
+        });
       }
 
       function createSection(doc, hostControls, id, title, open) {
@@ -177,14 +344,12 @@
       function arrangeHostSections(win, doc, state) {
         const hostControls = doc.getElementById('hostControls');
         if (!hostControls) return;
-
         const roundsBody = createSection(doc, hostControls, 'hostSection-rounds', 'Game mode & rounds', true);
         const accessBody = createSection(doc, hostControls, 'hostSection-access', 'Room & host access', false);
         const revealBody = createSection(doc, hostControls, 'hostSection-reveal', 'Reveal system', false);
         const playersBody = createSection(doc, hostControls, 'hostSection-players', 'Players', true);
         const advancedBody = createSection(doc, hostControls, 'hostSection-advanced', 'Trivia, AI, and remote tools', false);
         const manualBody = createSection(doc, hostControls, 'hostSection-manual', 'Profiles & custom categories', false);
-
         const modePanel = doc.getElementById('hostModePanel');
         const timerBlock = doc.querySelector('.timer-block');
         const startActions = doc.getElementById('hostStartBtn')?.parentElement;
@@ -197,14 +362,12 @@
         const playersList = doc.getElementById('playersList');
         const aiTools = doc.getElementById('aiToolsMount');
         const manualEditor = doc.getElementById('manualEditorMount');
-
         moveNodes(roundsBody, [modePanel, timerBlock, startActions]);
         moveNodes(accessBody, [hostAccessBlock, instanceManager, deckImportGrid, deckImportActions]);
         moveNodes(revealBody, [revealSettings]);
         moveNodes(playersBody, [playersHeading, playersList]);
         moveNodes(advancedBody, [aiTools]);
         moveNodes(manualBody, [manualEditor]);
-
         const triviaMode = state?.game_mode === 'trivia';
         hostControls.classList.toggle('trivia-mode', triviaMode);
         const accessSection = doc.getElementById('hostSection-access');
@@ -260,7 +423,6 @@
             </div>
           `;
           hostControls.insertBefore(panel, hostControls.firstChild);
-
           doc.getElementById('enhancedApplyModeBtn').addEventListener('click', async () => {
             try {
               const mode = doc.getElementById('enhancedGameModeSelect').value;
@@ -270,7 +432,6 @@
               win.setNotice('hostNotice', err.message, 'warning');
             }
           });
-
           doc.getElementById('enhancedPrepareTriviaBtn').addEventListener('click', async () => {
             try {
               const categorySelect = doc.getElementById('enhancedTriviaCategorySelect');
@@ -303,7 +464,6 @@
               win.setNotice('hostExtraNotice', err.message, 'warning');
             }
           });
-
           doc.getElementById('enhancedStartTriviaBtn').addEventListener('click', async () => {
             try {
               await win.hostAction('set_game_mode', { game_mode: 'trivia' });
@@ -313,23 +473,19 @@
               win.setNotice('hostExtraNotice', err.message, 'warning');
             }
           });
-
           doc.getElementById('enhancedNewCategoryBtn').addEventListener('click', () => {
             const select = doc.getElementById('customTriviaPackSelect');
             const nameInput = doc.getElementById('customTriviaPackNameInput');
-            const slugInput = doc.getElementById('customTriviaPackSlugInput');
             if (select) select.value = '';
             if (nameInput) nameInput.focus();
             const manual = doc.getElementById('manualEditorMount');
             if (manual) manual.scrollIntoView({ behavior: 'smooth', block: 'start' });
           });
         }
-
         const mode = state?.game_mode || 'cards';
         panel.dataset.mode = mode;
         const modeSelect = doc.getElementById('enhancedGameModeSelect');
         if (modeSelect) modeSelect.value = mode;
-
         const answerSeconds = state?.trivia?.answer_seconds || state?.round_timer_duration || 15;
         const revealSeconds = state?.trivia?.reveal_seconds || 5;
         const autoCycle = String(state?.trivia?.auto_cycle_enabled !== false);
@@ -337,7 +493,6 @@
         if (doc.getElementById('enhancedRevealSecondsInput')) doc.getElementById('enhancedRevealSecondsInput').value = revealSeconds;
         if (doc.getElementById('enhancedAutoCycleSelect')) doc.getElementById('enhancedAutoCycleSelect').value = autoCycle;
         if (doc.getElementById('enhancedTriviaSourceSelect')) doc.getElementById('enhancedTriviaSourceSelect').value = state?.trivia?.source || 'offline_curated';
-
         const categorySelect = doc.getElementById('enhancedTriviaCategorySelect');
         if (categorySelect) {
           const options = getTriviaCategoryOptions(win, doc);
@@ -349,7 +504,6 @@
             win.localStorage.setItem('ha_card_game_selected_categories', JSON.stringify(selected));
           };
         }
-
         const oldCategorySelect = doc.getElementById('triviaCategorySelect');
         if (oldCategorySelect) oldCategorySelect.classList.add('legacy-trivia-hide');
         const oldCategoryLabel = doc.querySelector('label[for="triviaCategorySelect"]');
@@ -358,7 +512,9 @@
 
       function enhanceUi(win, doc, state) {
         if (!state) return;
+        ensurePromptCard(win, doc, state);
         ensureTriviaQuestionPrompt(win, doc, state);
+        enhanceHandCards(win, doc, state);
         ensureHostModePanel(win, doc, state);
         arrangeHostSections(win, doc, state);
       }
@@ -376,7 +532,10 @@
             try {
               const win = frame.contentWindow;
               const doc = frame.contentDocument;
-              if (win?.latestState && doc) renderQuestionTimer(win, doc, win.latestState);
+              if (win?.latestState && doc) {
+                renderQuestionTimer(win, doc, win.latestState);
+                enhanceHandCards(win, doc, win.latestState);
+              }
             } catch (_err) {}
           }, 1000);
         };
