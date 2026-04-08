@@ -1237,7 +1237,14 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         })
 
         self.game_mode = options.get(CONF_DEFAULT_GAME_MODE, self.game_mode)
-        self.base_url = (options.get(CONF_REMOTE_BASE_URL, self.base_url or DEFAULT_REMOTE_BASE_URL) or "").rstrip("/")
+        remote_base_url = (
+            options.get(CONF_REMOTE_BASE_URL)
+            or self.entry_options.get(CONF_REMOTE_BASE_URL)
+            or self.base_url
+            or DEFAULT_REMOTE_BASE_URL
+            or ""
+        )
+        self.base_url = str(remote_base_url).strip().rstrip("/")
         self.ai_generator.update_settings(
             enabled=bool(options.get(CONF_AI_ENABLED, self.ai_generator.settings.enabled)),
             endpoint=options.get(CONF_AI_ENDPOINT, self.ai_generator.settings.endpoint),
