@@ -1,0 +1,27 @@
+Patch for custom_components/ha_card_game/api.py
+
+1) In host bootstrap, extend the "trivia" dict with:
+
+                    "voice": dict(getattr(self.coordinator, "trivia_voice_config", {})),
+                    "tts_providers": await self.coordinator.async_available_tts_providers(),
+                    "speaker_targets": await self.coordinator.async_available_speakers(),
+
+2) In available_actions, add:
+
+                    "set_trivia_voice_config",
+
+3) In CardGameHostActionView.post(), add this branch:
+
+            elif action == "set_trivia_voice_config":
+                targets = data.get("speaker_targets")
+                await self.coordinator.async_set_trivia_voice_config(
+                    enabled=bool(data.get("enabled")) if data.get("enabled") is not None else None,
+                    provider_entity=str(data.get("provider_entity")).strip() if data.get("provider_entity") is not None else None,
+                    speaker_targets=list(targets) if isinstance(targets, list) else None,
+                    voice=str(data.get("voice")).strip() if data.get("voice") is not None else None,
+                    language=str(data.get("language")).strip() if data.get("language") is not None else None,
+                    announce_answers=bool(data.get("announce_answers")) if data.get("announce_answers") is not None else None,
+                    announce_correct_players=bool(data.get("announce_correct_players")) if data.get("announce_correct_players") is not None else None,
+                    start_timer_after_voice=bool(data.get("start_timer_after_voice")) if data.get("start_timer_after_voice") is not None else None,
+                    speech_rate_wpm=int(data.get("speech_rate_wpm")) if data.get("speech_rate_wpm") is not None else None,
+                )

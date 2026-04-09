@@ -1,0 +1,142 @@
+Patch for custom_components/ha_card_game/coordinator.py
+
+1) In __init__, add this right after self.entry_options:
+
+        self.trivia_voice_config: dict[str, Any] = {
+            "enabled": False,
+            "provider_entity": "",
+            "speaker_targets": [],
+            "voice": "",
+            "language": "",
+            "announce_answers": True,
+            "announce_correct_players": True,
+            "start_timer_after_voice": True,
+            "speech_rate_wpm": 155,
+        }
+
+2) In async_load(), after self.entry_options / other saved dict loads, add:
+
+            self.trivia_voice_config = {
+                **self.trivia_voice_config,
+                **dict(saved.get("trivia_voice_config", {})),
+            }
+
+3) In async_save(), include this in the payload dict:
+
+            "trivia_voice_config": dict(self.trivia_voice_config),
+
+4) In player_state(), after state["trivia"] is created, add:
+
+        state["trivia"]["voice"] = dict(self.trivia_voice_config)
+
+5) Add these methods inside CardGameCoordinator:
+
+    async def async_available_tts_providers(self) -> list[dict[str, Any]]:
+        providers: list[dict[str, Any]] = []
+        for entity_state in self.hass.states.async_all("tts"):
+            providers.append({
+                "entity_id": entity_state.entity_id,
+                "name": entity_state.attributes.get("friendly_name", entity_state.entity_id),
+            })
+        providers.sort(key=lambda item: item["name"].lower())
+        return providers
+
+    async def async_available_speakers(self) -> list[dict[str, Any]]:
+        speakers: list[dict[str, Any]] = []
+        for entity_state in self.hass.states.async_all("media_player"):
+            speakers.append({
+                "entity_id": entity_state.entity_id,
+                "name": entity_state.attributes.get("friendly_name", entity_state.entity_id),
+            })
+        speakers.sort(key=lambda item: item["name"].lower())
+        return speakers
+
+    async def async_set_trivia_voice_config(
+        self,
+        *,
+        enabled: bool | None = None,
+        provider_entity: str | None = None,
+        speaker_targets: list[str] | None = None,
+        voice: str | None = None,
+        language: str | None = None,
+        announce_answers: bool | None = None,
+        announce_correct_players: bool | None = None,
+        start_timer_after_voice: bool | None = None,
+        speech_rate_wpm: int | None = None,
+    ) -> None:
+        config = dict(self.trivia_voice_config)
+
+        if enabled is not None:
+            config["enabled"] = bool(enabled)
+        if provider_entity is not None:
+            config["provider_entity"] = str(provider_entity).strip()
+        if speaker_targets is not None:
+            cleaned: list[str] = []
+            for item in speaker_targets:
+                value = str(item or "").strip()
+                if value and value not in cleaned:
+                    cleaned.append(value)
+            config["speaker_targets"] = cleaned
+        if voice is not None:
+            config["voice"] = str(voice).strip()
+        if language is not None:
+            config["language"] = str(language).strip()
+        if announce_answers is not None:
+            config["announce_answers"] = bool(announce_answers)
+        if announce_correct_players is not None:
+            config["announce_correct_players"] = bool(announce_correct_players)
+        if start_timer_after_voice is not None:
+            config["start_timer_after_voice"] = bool(start_timer_after_voice)
+        if speech_rate_wpm is not None:
+            config["speech_rate_wpm"] = max(80, min(260, int(speech_rate_wpm)))
+
+        self.trivia_voice_config = config
+        await self.async_refresh_from_engine()
+
+    def _estimate_tts_duration_seconds(self, message: str) -> float:
+        words = max(1, len((message or "").split()))
+        wpm = max(80, min(260, int(self.trivia_voice_config.get("speech_rate_wpm", 155) or 155)))
+        seconds = (words / float(wpm)) * 60.0
+        punctuation_bonus = min(2.5, (message.count(".") + message.count("?") + message.count("!")) * 0.2)
+        return max(1.5, min(25.0, seconds + punctuation_bonus + 0.75))
+
+    async def async_speak_trivia_text(self, message: str) -> float:
+        message = str(message or "").strip()
+        if not message:
+            return 0.0
+
+        config = dict(self.trivia_voice_config)
+        if not config.get("enabled"):
+            return 0.0
+
+        provider_entity = str(config.get("provider_entity", "") or "").strip()
+        targets = [str(item).strip() for item in config.get("speaker_targets", []) if str(item).strip()]
+        if not provider_entity or not targets:
+            return 0.0
+
+        options: dict[str, Any] = {}
+        voice = str(config.get("voice", "") or "").strip()
+        language = str(config.get("language", "") or "").strip()
+        if voice:
+            options["voice"] = voice
+
+        for target_entity in targets:
+            payload: dict[str, Any] = {
+                "media_player_entity_id": target_entity,
+                "message": message,
+                "cache": False,
+            }
+            if language:
+                payload["language"] = language
+            if options:
+                payload["options"] = dict(options)
+
+            await self.hass.services.async_call(
+                "tts",
+                "speak",
+                payload,
+                blocking=True,
+                target={"entity_id": provider_entity},
+            )
+
+        return self._estimate_tts_duration_seconds(message)
