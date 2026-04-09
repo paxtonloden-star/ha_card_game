@@ -22,14 +22,15 @@
         const win = frame.contentWindow;
         const doc = frame.contentDocument;
         if (!win || !doc || !doc.body) return false;
+
         if (win.__cardGamesWrapperEnhancementsApplied) {
           if (win.latestState) {
             try { enhanceUi(win, doc, win.latestState); } catch (_err) {}
           }
           return true;
         }
-        if (typeof win.render !== 'function' || typeof win.hostAction !== 'function') return false;
 
+        if (typeof win.render !== 'function' || typeof win.hostAction !== 'function') return false;
         win.__cardGamesWrapperEnhancementsApplied = true;
 
         const style = doc.createElement('style');
@@ -103,10 +104,29 @@
           #triviaQuestionPrompt .q-badge { color: #9bb6ff; }
           #triviaQuestionPrompt .q-timer-row { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
           #triviaQuestionPrompt .q-timer-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; opacity: .7; }
-          #triviaQuestionPrompt .q-timer-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 70px; padding: 6px 10px; border-radius: 999px; font-weight: 800; background: rgba(124,156,255,.18); border: 1px solid rgba(124,156,255,.25); }
-          #triviaQuestionPrompt .q-timer-badge.warning { background: rgba(245,158,11,.18); border-color: rgba(245,158,11,.35); color: #ffd089; }
-          #triviaQuestionPrompt .q-timer-badge.danger { background: rgba(239,68,68,.18); border-color: rgba(239,68,68,.35); color: #ffb0b0; }
+          #triviaQuestionPrompt .q-timer-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 70px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-weight: 800;
+            background: rgba(124,156,255,.18);
+            border: 1px solid rgba(124,156,255,.25);
+          }
+          #triviaQuestionPrompt .q-timer-badge.warning {
+            background: rgba(245,158,11,.18);
+            border-color: rgba(245,158,11,.35);
+            color: #ffd089;
+          }
+          #triviaQuestionPrompt .q-timer-badge.danger {
+            background: rgba(239,68,68,.18);
+            border-color: rgba(239,68,68,.35);
+            color: #ffb0b0;
+          }
           #triviaQuestionPrompt .q-timer-note { font-size: 12px; opacity: .72; }
+
           #handList.enhanced-card-hand {
             display: grid !important;
             grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
@@ -165,17 +185,61 @@
             opacity: .72;
             font-weight: 800;
           }
-          #hostModePanel.card { margin-bottom: 16px; border: 1px solid rgba(124,156,255,.24); background: rgba(124,156,255,.08); }
-          #hostModePanel .control-grid { margin-bottom: 12px; }
-          .host-section details { border: 1px solid rgba(255,255,255,.08); border-radius: 14px; background: rgba(10,16,32,.45); margin-top: 12px; overflow: hidden; }
-          .host-section summary { cursor: pointer; list-style: none; padding: 14px 16px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+
+          #hostModePanel.card {
+            margin-bottom: 16px;
+            border: 1px solid rgba(124,156,255,.24);
+            background: rgba(124,156,255,.08);
+          }
+          #hostModePanel .control-grid,
+          #hostModePanel .subgrid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 12px;
+          }
+          #hostModePanel .subgrid {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255,255,255,.08);
+          }
+
+          .host-section details {
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 14px;
+            background: rgba(10,16,32,.45);
+            margin-top: 12px;
+            overflow: hidden;
+          }
+          .host-section summary {
+            cursor: pointer;
+            list-style: none;
+            padding: 14px 16px;
+            font-weight: 700;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
           .host-section summary::-webkit-details-marker { display: none; }
           .host-section .section-body { padding: 0 16px 16px; }
           .host-section[data-hidden="true"] { display: none !important; }
+
           #hostModePanel[data-mode="trivia"] .cards-only { display: none !important; }
-          #hostModePanel[data-mode="cards"] .trivia-only, #hostModePanel[data-mode="judge_party"] .trivia-only { display: none !important; }
-          #aiToolsMount .legacy-trivia-hide, #aiToolsMount .legacy-trivia-hide + div, #aiToolsMount .legacy-trivia-hide + input, #aiToolsMount .legacy-trivia-hide + select { display:none !important; }
-          #hostControls.trivia-mode #deckSelect, #hostControls.trivia-mode #deckDescription, #hostControls.trivia-mode #selectedDeckMode { display:none !important; }
+          #hostModePanel[data-mode="cards"] .trivia-only,
+          #hostModePanel[data-mode="judge_party"] .trivia-only { display: none !important; }
+
+          #hostControls .legacy-trivia-control,
+          #hostControls .legacy-trivia-control + div,
+          #hostControls .legacy-trivia-control + select,
+          #hostControls .legacy-trivia-control + input,
+          #hostControls .legacy-trivia-control + label,
+          #hostControls.trivia-mode #deckSelect,
+          #hostControls.trivia-mode #deckDescription,
+          #hostControls.trivia-mode #selectedDeckMode,
+          #hostControls.trivia-mode .timer-block,
+          #hostControls.trivia-mode .reveal-settings {
+            display: none !important;
+          }
+
           #enhancedTriviaCategorySelect { min-height: 140px; }
           #hostModePanel .pill-note { font-size: 12px; opacity: .75; }
         `;
@@ -244,7 +308,7 @@
         badge.classList.toggle('danger', remaining <= 5 && remaining >= 0);
         if (state?.state === 'results') {
           const revealSeconds = Number(state?.trivia?.reveal_seconds || 5);
-          note.textContent = `Answer shown now${revealSeconds > 0 ? ` µ next question after about ${revealSeconds}s` : ''}`;
+          note.textContent = `Answer shown now${revealSeconds > 0 ? ` · next question after about ${revealSeconds}s` : ''}`;
         } else if (totalSeconds && endsAt) {
           note.textContent = 'Time remaining to answer';
         } else {
@@ -302,9 +366,7 @@
             const brand = card.querySelector('.card-brand'); if (brand) brand.remove();
             const idx = card.querySelector('.card-index'); if (idx) idx.remove();
             const text = card.querySelector('.card-text');
-            if (text) {
-              card.textContent = text.textContent || '';
-            }
+            if (text) card.textContent = text.textContent || '';
             return;
           }
           const selected = card.classList.contains('selected') || card.getAttribute('aria-pressed') === 'true';
@@ -341,42 +403,66 @@
         nodes.filter(Boolean).forEach((node) => body.appendChild(node));
       }
 
+      function markLegacyTriviaControls(doc) {
+        [
+          'triviaCategorySelect',
+          'triviaTeamModeSelect',
+          'triviaBuzzerModeSelect',
+          'triviaBuzzBonusInput',
+          'triviaStealEnabledSelect',
+          'triviaCountInput',
+          'triviaAgeRangeSelect',
+          'triviaSourceSelect'
+        ].forEach((id) => {
+          const el = doc.getElementById(id);
+          if (el) {
+            el.classList.add('legacy-trivia-control');
+            const label = doc.querySelector(`label[for="${id}"]`);
+            if (label) label.classList.add('legacy-trivia-control');
+          }
+        });
+      }
+
       function arrangeHostSections(win, doc, state) {
         const hostControls = doc.getElementById('hostControls');
         if (!hostControls) return;
+
         const roundsBody = createSection(doc, hostControls, 'hostSection-rounds', 'Game mode & rounds', true);
-        const accessBody = createSection(doc, hostControls, 'hostSection-access', 'Room & host access', false);
-        const revealBody = createSection(doc, hostControls, 'hostSection-reveal', 'Reveal system', false);
         const playersBody = createSection(doc, hostControls, 'hostSection-players', 'Players', true);
-        const advancedBody = createSection(doc, hostControls, 'hostSection-advanced', 'Trivia, AI, and remote tools', false);
-        const manualBody = createSection(doc, hostControls, 'hostSection-manual', 'Profiles & custom categories', false);
+        const accessBody = createSection(doc, hostControls, 'hostSection-access', 'Room & host access', false);
+        const advancedBody = createSection(doc, hostControls, 'hostSection-advanced', 'AI, import, and custom content', false);
+
         const modePanel = doc.getElementById('hostModePanel');
-        const timerBlock = doc.querySelector('.timer-block');
         const startActions = doc.getElementById('hostStartBtn')?.parentElement;
+        const playersHeading = Array.from(hostControls.querySelectorAll('h3')).find((node) => node.textContent.trim() === 'Players');
+        const playersList = doc.getElementById('playersList');
         const hostAccessBlock = doc.getElementById('hostUsersSelect')?.closest('.reveal-settings');
         const instanceManager = doc.getElementById('instanceManager');
         const deckImportGrid = doc.getElementById('deckImportModeSelect')?.closest('.control-grid');
         const deckImportActions = doc.getElementById('exportDecksBtn')?.closest('.actions');
-        const revealSettings = doc.getElementById('revealDurationInput')?.closest('.reveal-settings');
-        const playersHeading = Array.from(hostControls.querySelectorAll('h3')).find((node) => node.textContent.trim() === 'Players');
-        const playersList = doc.getElementById('playersList');
         const aiTools = doc.getElementById('aiToolsMount');
         const manualEditor = doc.getElementById('manualEditorMount');
-        moveNodes(roundsBody, [modePanel, timerBlock, startActions]);
-        moveNodes(accessBody, [hostAccessBlock, instanceManager, deckImportGrid, deckImportActions]);
-        moveNodes(revealBody, [revealSettings]);
+
+        moveNodes(roundsBody, [modePanel, startActions]);
         moveNodes(playersBody, [playersHeading, playersList]);
-        moveNodes(advancedBody, [aiTools]);
-        moveNodes(manualBody, [manualEditor]);
+        moveNodes(accessBody, [hostAccessBlock, instanceManager]);
+        moveNodes(advancedBody, [deckImportGrid, deckImportActions, aiTools, manualEditor]);
+
         const triviaMode = state?.game_mode === 'trivia';
         hostControls.classList.toggle('trivia-mode', triviaMode);
-        const accessSection = doc.getElementById('hostSection-access');
-        if (accessSection) accessSection.dataset.hidden = triviaMode ? 'true' : 'false';
+      }
+
+      function setValue(doc, id, value) {
+        const el = doc.getElementById(id);
+        if (el != null && value != null) el.value = String(value);
       }
 
       function ensureHostModePanel(win, doc, state) {
         const hostControls = doc.getElementById('hostControls');
         if (!hostControls) return;
+
+        markLegacyTriviaControls(doc);
+
         let panel = doc.getElementById('hostModePanel');
         if (!panel) {
           panel = doc.createElement('div');
@@ -399,22 +485,54 @@
                 <div class="pill-note">Hold Ctrl/Cmd to choose more than one category. Custom packs also appear here.</div>
               </div>
               <div class="trivia-only">
+                <label class="label" for="enhancedTriviaCountInput">Question count</label>
+                <input id="enhancedTriviaCountInput" type="number" min="1" max="50" step="1" value="10" />
+              </div>
+              <div class="trivia-only">
+                <label class="label" for="enhancedTriviaAgeRangeSelect">Age range</label>
+                <select id="enhancedTriviaAgeRangeSelect">
+                  <option value="kids">Kids</option>
+                  <option value="teens">Teens</option>
+                  <option value="18_plus">18+</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="subgrid trivia-only">
+              <div>
+                <label class="label" for="enhancedTriviaTeamModeSelect">Team mode</label>
+                <select id="enhancedTriviaTeamModeSelect"><option value="true">On</option><option value="false">Off</option></select>
+              </div>
+              <div>
+                <label class="label" for="enhancedTriviaBuzzerModeSelect">Buzzer mode</label>
+                <select id="enhancedTriviaBuzzerModeSelect"><option value="true">On</option><option value="false">Off</option></select>
+              </div>
+              <div>
+                <label class="label" for="enhancedTriviaBuzzBonusInput">Buzz bonus</label>
+                <input id="enhancedTriviaBuzzBonusInput" type="number" min="0" max="10" step="1" value="1" />
+              </div>
+              <div>
+                <label class="label" for="enhancedTriviaStealEnabledSelect">Steal answer</label>
+                <select id="enhancedTriviaStealEnabledSelect"><option value="true">On</option><option value="false">Off</option></select>
+              </div>
+              <div>
                 <label class="label" for="enhancedAnswerSecondsInput">Answer seconds</label>
                 <input id="enhancedAnswerSecondsInput" type="number" min="3" max="120" step="1" value="15" />
               </div>
-              <div class="trivia-only">
+              <div>
                 <label class="label" for="enhancedRevealSecondsInput">Reveal seconds</label>
                 <input id="enhancedRevealSecondsInput" type="number" min="1" max="60" step="1" value="5" />
               </div>
-              <div class="trivia-only">
+              <div>
                 <label class="label" for="enhancedAutoCycleSelect">Auto next question</label>
                 <select id="enhancedAutoCycleSelect"><option value="true">On</option><option value="false">Off</option></select>
               </div>
-              <div class="trivia-only">
+              <div>
                 <label class="label" for="enhancedTriviaSourceSelect">Source</label>
                 <select id="enhancedTriviaSourceSelect"><option value="offline_curated">Offline curated</option><option value="ai">AI</option></select>
               </div>
             </div>
+
             <div class="actions wrap">
               <button id="enhancedApplyModeBtn">Apply mode</button>
               <button class="secondary trivia-only" id="enhancedPrepareTriviaBtn">Prepare trivia</button>
@@ -423,6 +541,7 @@
             </div>
           `;
           hostControls.insertBefore(panel, hostControls.firstChild);
+
           doc.getElementById('enhancedApplyModeBtn').addEventListener('click', async () => {
             try {
               const mode = doc.getElementById('enhancedGameModeSelect').value;
@@ -432,22 +551,24 @@
               win.setNotice('hostNotice', err.message, 'warning');
             }
           });
+
           doc.getElementById('enhancedPrepareTriviaBtn').addEventListener('click', async () => {
             try {
               const categorySelect = doc.getElementById('enhancedTriviaCategorySelect');
               const categories = Array.from(categorySelect.selectedOptions || []).map((option) => option.value).filter(Boolean);
-              const ageRange = doc.getElementById('triviaAgeRangeSelect')?.value || '18_plus';
-              const questionCount = parseInt(doc.getElementById('triviaCountInput')?.value || '10', 10);
+              const ageRange = doc.getElementById('enhancedTriviaAgeRangeSelect').value || '18_plus';
+              const questionCount = parseInt(doc.getElementById('enhancedTriviaCountInput').value || '10', 10);
               const answerSeconds = parseInt(doc.getElementById('enhancedAnswerSecondsInput').value || '15', 10);
               const revealSeconds = parseInt(doc.getElementById('enhancedRevealSecondsInput').value || '5', 10);
               const autoCycleEnabled = doc.getElementById('enhancedAutoCycleSelect').value === 'true';
               const source = doc.getElementById('enhancedTriviaSourceSelect').value || 'offline_curated';
+
               await win.hostAction('set_game_mode', { game_mode: 'trivia' });
               await win.hostAction('set_trivia_settings', {
-                team_mode: doc.getElementById('triviaTeamModeSelect')?.value === 'true',
-                buzzer_mode: doc.getElementById('triviaBuzzerModeSelect')?.value === 'true',
-                buzz_bonus: parseInt(doc.getElementById('triviaBuzzBonusInput')?.value || '1', 10),
-                steal_enabled: doc.getElementById('triviaStealEnabledSelect')?.value === 'true',
+                team_mode: doc.getElementById('enhancedTriviaTeamModeSelect').value === 'true',
+                buzzer_mode: doc.getElementById('enhancedTriviaBuzzerModeSelect').value === 'true',
+                buzz_bonus: parseInt(doc.getElementById('enhancedTriviaBuzzBonusInput').value || '1', 10),
+                steal_enabled: doc.getElementById('enhancedTriviaStealEnabledSelect').value === 'true',
                 answer_seconds: answerSeconds,
                 reveal_seconds: revealSeconds,
                 auto_cycle_enabled: autoCycleEnabled
@@ -464,6 +585,7 @@
               win.setNotice('hostExtraNotice', err.message, 'warning');
             }
           });
+
           doc.getElementById('enhancedStartTriviaBtn').addEventListener('click', async () => {
             try {
               await win.hostAction('set_game_mode', { game_mode: 'trivia' });
@@ -473,6 +595,7 @@
               win.setNotice('hostExtraNotice', err.message, 'warning');
             }
           });
+
           doc.getElementById('enhancedNewCategoryBtn').addEventListener('click', () => {
             const select = doc.getElementById('customTriviaPackSelect');
             const nameInput = doc.getElementById('customTriviaPackNameInput');
@@ -482,32 +605,38 @@
             if (manual) manual.scrollIntoView({ behavior: 'smooth', block: 'start' });
           });
         }
+
         const mode = state?.game_mode || 'cards';
         panel.dataset.mode = mode;
-        const modeSelect = doc.getElementById('enhancedGameModeSelect');
-        if (modeSelect) modeSelect.value = mode;
-        const answerSeconds = state?.trivia?.answer_seconds || state?.round_timer_duration || 15;
-        const revealSeconds = state?.trivia?.reveal_seconds || 5;
-        const autoCycle = String(state?.trivia?.auto_cycle_enabled !== false);
-        if (doc.getElementById('enhancedAnswerSecondsInput')) doc.getElementById('enhancedAnswerSecondsInput').value = answerSeconds;
-        if (doc.getElementById('enhancedRevealSecondsInput')) doc.getElementById('enhancedRevealSecondsInput').value = revealSeconds;
-        if (doc.getElementById('enhancedAutoCycleSelect')) doc.getElementById('enhancedAutoCycleSelect').value = autoCycle;
-        if (doc.getElementById('enhancedTriviaSourceSelect')) doc.getElementById('enhancedTriviaSourceSelect').value = state?.trivia?.source || 'offline_curated';
+        setValue(doc, 'enhancedGameModeSelect', mode);
+
+        const trivia = state?.trivia || {};
+        const answerSeconds = trivia.answer_seconds || state?.round_timer_duration || 15;
+        const revealSeconds = trivia.reveal_seconds || 5;
+        const autoCycle = String(trivia.auto_cycle_enabled !== false);
+
         const categorySelect = doc.getElementById('enhancedTriviaCategorySelect');
         if (categorySelect) {
           const options = getTriviaCategoryOptions(win, doc);
           const remembered = JSON.parse(win.localStorage.getItem('ha_card_game_selected_categories') || '[]');
-          const selectedSet = new Set(remembered.length ? remembered : [state?.trivia?.category].filter(Boolean));
+          const selectedSet = new Set(remembered.length ? remembered : [trivia.category].filter(Boolean));
           categorySelect.innerHTML = options.map((item) => `<option value="${item.value}" ${selectedSet.has(item.value) ? 'selected' : ''}>${item.label}</option>`).join('');
           categorySelect.onchange = () => {
             const selected = Array.from(categorySelect.selectedOptions || []).map((option) => option.value);
             win.localStorage.setItem('ha_card_game_selected_categories', JSON.stringify(selected));
           };
         }
-        const oldCategorySelect = doc.getElementById('triviaCategorySelect');
-        if (oldCategorySelect) oldCategorySelect.classList.add('legacy-trivia-hide');
-        const oldCategoryLabel = doc.querySelector('label[for="triviaCategorySelect"]');
-        if (oldCategoryLabel) oldCategoryLabel.classList.add('legacy-trivia-hide');
+
+        setValue(doc, 'enhancedAnswerSecondsInput', answerSeconds);
+        setValue(doc, 'enhancedRevealSecondsInput', revealSeconds);
+        setValue(doc, 'enhancedAutoCycleSelect', autoCycle);
+        setValue(doc, 'enhancedTriviaSourceSelect', trivia.source || 'offline_curated');
+        setValue(doc, 'enhancedTriviaCountInput', 10);
+        setValue(doc, 'enhancedTriviaAgeRangeSelect', trivia.age_range || '18_plus');
+        setValue(doc, 'enhancedTriviaTeamModeSelect', String(Boolean(trivia.team_mode)));
+        setValue(doc, 'enhancedTriviaBuzzerModeSelect', String(Boolean(trivia.buzzer_mode)));
+        setValue(doc, 'enhancedTriviaBuzzBonusInput', trivia.buzz_bonus ?? 1);
+        setValue(doc, 'enhancedTriviaStealEnabledSelect', String(Boolean(trivia.steal_enabled)));
       }
 
       function enhanceUi(win, doc, state) {
@@ -525,6 +654,7 @@
           attempts += 1;
           if (tryEnhanceLegacy() || attempts > 80) clearInterval(timer);
         }, 250);
+
         let timerLoop = null;
         const startTimerLoop = () => {
           if (timerLoop) clearInterval(timerLoop);
