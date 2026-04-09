@@ -18,6 +18,75 @@
       target.hash = window.location.hash;
       frame.src = target.toString();
 
+
+      function clearTriviaAutoAdvanceFallback() {
+        if (triviaAutoAdvanceTimer) {
+          clearTimeout(triviaAutoAdvanceTimer);
+          triviaAutoAdvanceTimer = null;
+        }
+        triviaAutoAdvanceKey = '';
+      }
+
+      function scheduleTriviaAutoAdvanceFallback(win) {
+        try {
+          const state = win?.latestState;
+          if (!state || state.game_mode !== 'trivia') {
+            clearTriviaAutoAdvanceFallback();
+            return;
+          }
+          const trivia = state.trivia || {};
+          const revealSeconds = Number(trivia.reveal_seconds || 0);
+          const autoCycleEnabled = trivia.auto_cycle_enabled !== false;
+          const remaining = Number(trivia.remaining ?? 0);
+          const key = [
+            state.state || '',
+            state.round_number || 0,
+            state.winner || '',
+            trivia.current_index ?? -1,
+            revealSeconds,
+            autoCycleEnabled,
+            remaining
+          ].join('|');
+
+          if (state.state !== 'results' || !autoCycleEnabled || revealSeconds <= 0 || remaining <= 0) {
+            clearTriviaAutoAdvanceFallback();
+            return;
+          }
+
+          if (triviaAutoAdvanceKey === key && triviaAutoAdvanceTimer) return;
+
+          clearTriviaAutoAdvanceFallback();
+          triviaAutoAdvanceKey = key;
+          triviaAutoAdvanceTimer = setTimeout(async () => {
+            try {
+              const current = win?.latestState;
+              const currentTrivia = current?.trivia || {};
+              const currentKey = [
+                current?.state || '',
+                current?.round_number || 0,
+                current?.winner || '',
+                currentTrivia.current_index ?? -1,
+                Number(currentTrivia.reveal_seconds || 0),
+                currentTrivia.auto_cycle_enabled !== false,
+                Number(currentTrivia.remaining ?? 0)
+              ].join('|');
+
+              if (currentKey !== key) return;
+              if (typeof win?.hostAction === 'function') {
+                await win.hostAction('start_trivia_round');
+                if (typeof win?.fetchState === 'function') {
+                  await win.fetchState().catch(() => {});
+                }
+              }
+            } catch (_err) {
+            } finally {
+              triviaAutoAdvanceTimer = null;
+            }
+          }, Math.max(500, revealSeconds * 1000 + 250));
+        } catch (_err) {
+        }
+      }
+
       function tryEnhanceLegacy() {
         const win = frame.contentWindow;
         const doc = frame.contentDocument;
@@ -25,7 +94,7 @@
 
         if (win.__cardGamesWrapperEnhancementsApplied) {
           if (win.latestState) {
-            try { enhanceUi(win, doc, win.latestState); } catch (_err) {}
+            try { enhanceUi(win, doc, win.latestState); scheduleTriviaAutoAdvanceFallback(win); } catch (_err) {}
           }
           return true;
         }
@@ -248,7 +317,7 @@
         const originalRender = win.render.bind(win);
         win.render = function(state) {
           const result = originalRender(state);
-          setTimeout(() => { try { enhanceUi(win, doc, state); } catch (err) { console.error(err); } }, 0);
+          setTimeout(() => { try { enhanceUi(win, doc, state); scheduleTriviaAutoAdvanceFallback(win); } catch (err) { console.error(err); } }, 0);
           return result;
         };
 
@@ -256,7 +325,7 @@
         if (originalBootstrapHost) {
           win.bootstrapHost = async function(...args) {
             const result = await originalBootstrapHost(...args);
-            setTimeout(() => { try { enhanceUi(win, doc, win.latestState || null); } catch (err) { console.error(err); } }, 0);
+            setTimeout(() => { try { enhanceUi(win, doc, win.latestState || null); scheduleTriviaAutoAdvanceFallback(win); } catch (err) { console.error(err); } }, 0);
             return result;
           };
         }
@@ -554,7 +623,12 @@
           });
 
           doc.getElementById('enhancedPrepareTriviaBtn').addEventListener('click', async () => {
+            const button = doc.getElementById('enhancedPrepareTriviaBtn');
+            const originalText = button.textContent;
             try {
+              button.disabled = true;
+              button.textContent = 'Please wait…';
+              win.setNotice('hostExtraNotice', 'Preparing trivia…', '');
               const categorySelect = doc.getElementById('enhancedTriviaCategorySelect');
               const categories = Array.from(categorySelect.selectedOptions || []).map((option) => option.value).filter(Boolean);
               const ageRange = doc.getElementById('enhancedTriviaAgeRangeSelect').value || '18_plus';
@@ -581,14 +655,25 @@
                 question_count: questionCount,
                 source
               });
+              if (typeof win.fetchState === 'function') {
+                await win.fetchState().catch(() => {});
+              }
               win.setNotice('hostExtraNotice', `Prepared trivia from ${categories.length || 1} categor${categories.length === 1 ? 'y' : 'ies'}.`, 'success');
             } catch (err) {
               win.setNotice('hostExtraNotice', err.message, 'warning');
+            } finally {
+              button.disabled = false;
+              button.textContent = originalText;
             }
           });
 
           doc.getElementById('enhancedGenerateAiTriviaBtn').addEventListener('click', async () => {
+            const button = doc.getElementById('enhancedGenerateAiTriviaBtn');
+            const originalText = button.textContent;
             try {
+              button.disabled = true;
+              button.textContent = 'Please wait…';
+              win.setNotice('hostExtraNotice', 'Generating AI trivia deck…', '');
               const categorySelect = doc.getElementById('enhancedTriviaCategorySelect');
               const categories = Array.from(categorySelect.selectedOptions || []).map((option) => option.value).filter(Boolean);
               const ageRange = doc.getElementById('enhancedTriviaAgeRangeSelect').value || '18_plus';
@@ -612,9 +697,15 @@
                 question_count: questionCount,
                 source: 'ai'
               });
+              if (typeof win.fetchState === 'function') {
+                await win.fetchState().catch(() => {});
+              }
               win.setNotice('hostExtraNotice', 'AI trivia generated.', 'success');
             } catch (err) {
               win.setNotice('hostExtraNotice', err.message, 'warning');
+            } finally {
+              button.disabled = false;
+              button.textContent = originalText;
             }
           });
 
@@ -700,7 +791,7 @@
                 enhanceHandCards(win, doc, win.latestState);
               }
             } catch (_err) {}
-          }, 1000);
+          }, 250);
         };
         const startSyncLoop = () => {
           if (syncLoop) clearInterval(syncLoop);
@@ -711,7 +802,7 @@
                 win.fetchState().catch(() => {});
               }
             } catch (_err) {}
-          }, 2000);
+          }, 1000);
         };
         startTimerLoop();
         startSyncLoop();
