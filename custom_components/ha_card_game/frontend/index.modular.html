@@ -19,6 +19,53 @@
       frame.src = target.toString();
 
 
+
+      function markHostEditing(ms = 4000) {
+        hostEditing = true;
+        hostEditUntil = Date.now() + ms;
+      }
+
+      function clearHostEditingSoon(ms = 600) {
+        hostEditUntil = Date.now() + ms;
+        window.setTimeout(() => {
+          if (Date.now() >= hostEditUntil) hostEditing = false;
+        }, ms + 50);
+      }
+
+      function shouldSkipSync(doc) {
+        if (!hostEditing && Date.now() >= hostEditUntil) return false;
+        const active = doc?.activeElement;
+        if (!active) return false;
+        const tag = (active.tagName || '').toLowerCase();
+        return tag === 'input' || tag === 'select' || tag === 'textarea';
+      }
+
+      function wireHostEditingGuards(doc) {
+        if (doc.__hostEditingGuardsApplied) return;
+        doc.__hostEditingGuardsApplied = true;
+
+        doc.addEventListener('focusin', (event) => {
+          const target = event.target;
+          if (!target) return;
+          const tag = (target.tagName || '').toLowerCase();
+          if (tag === 'input' || tag === 'select' || tag === 'textarea') {
+            markHostEditing(8000);
+          }
+        });
+
+        doc.addEventListener('input', (event) => {
+          const target = event.target;
+          if (!target) return;
+          const tag = (target.tagName || '').toLowerCase();
+          if (tag === 'input' || tag === 'select' || tag === 'textarea') {
+            markHostEditing(8000);
+          }
+        });
+
+        doc.addEventListener('change', () => markHostEditing(3000));
+        doc.addEventListener('focusout', () => clearHostEditingSoon(800));
+      }
+
       function clearTriviaAutoAdvanceFallback() {
         if (triviaAutoAdvanceTimer) {
           clearTimeout(triviaAutoAdvanceTimer);
@@ -91,6 +138,7 @@
         const win = frame.contentWindow;
         const doc = frame.contentDocument;
         if (!win || !doc || !doc.body) return false;
+        wireHostEditingGuards(doc);
 
         if (win.__cardGamesWrapperEnhancementsApplied) {
           if (win.latestState) {
@@ -523,7 +571,9 @@
 
       function setValue(doc, id, value) {
         const el = doc.getElementById(id);
-        if (el != null && value != null) el.value = String(value);
+        if (el == null || value == null) return;
+        if (doc.activeElement === el) return;
+        el.value = String(value);
       }
 
       function ensureHostModePanel(win, doc, state) {
@@ -662,6 +712,8 @@
             } catch (err) {
               win.setNotice('hostExtraNotice', err.message, 'warning');
             } finally {
+              hostEditing = false;
+              hostEditUntil = 0;
               button.disabled = false;
               button.textContent = originalText;
             }
@@ -704,6 +756,8 @@
             } catch (err) {
               win.setNotice('hostExtraNotice', err.message, 'warning');
             } finally {
+              hostEditing = false;
+              hostEditUntil = 0;
               button.disabled = false;
               button.textContent = originalText;
             }
@@ -798,6 +852,8 @@
           syncLoop = setInterval(() => {
             try {
               const win = frame.contentWindow;
+              const doc = frame.contentDocument;
+              if (shouldSkipSync(doc)) return;
               if (typeof win?.fetchState === 'function') {
                 win.fetchState().catch(() => {});
               }
