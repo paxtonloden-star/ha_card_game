@@ -26,11 +26,13 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         self.trivia_reveal_seconds = 5
         self.trivia_auto_cycle_enabled = True
         self._trivia_cycle_task: asyncio.Task | None = None
+
     @property
     def join_url(self) -> str:
         if not self.base_url:
             return f"/local/{DOMAIN}/index.modular.html?join={self.join_code}"
         return f"{self.base_url}/local/{DOMAIN}/index.modular.html?join={self.join_code}"
+
     async def async_save(self) -> None:
         await super().async_save()
         self._sync_trivia_cycle()
@@ -45,9 +47,15 @@ class TriviaCoreCoordinator(CardGameCoordinator):
 
     async def async_apply_options(self, options: dict[str, Any]) -> None:
         await super().async_apply_options(options)
-        self.trivia_answer_seconds = max(3, int(options.get(CONF_TRIVIA_ANSWER_SECONDS, self.trivia_answer_seconds) or 15))
-        self.trivia_reveal_seconds = max(1, int(options.get(CONF_TRIVIA_REVEAL_SECONDS, self.trivia_reveal_seconds) or 5))
-        self.trivia_auto_cycle_enabled = bool(options.get(CONF_TRIVIA_AUTO_CYCLE_ENABLED, self.trivia_auto_cycle_enabled))
+        self.trivia_answer_seconds = max(
+            3, int(options.get(CONF_TRIVIA_ANSWER_SECONDS, self.trivia_answer_seconds) or 15)
+        )
+        self.trivia_reveal_seconds = max(
+            1, int(options.get(CONF_TRIVIA_REVEAL_SECONDS, self.trivia_reveal_seconds) or 5)
+        )
+        self.trivia_auto_cycle_enabled = bool(
+            options.get(CONF_TRIVIA_AUTO_CYCLE_ENABLED, self.trivia_auto_cycle_enabled)
+        )
         self._sync_trivia_cycle()
 
     def player_state(self, token: str | None) -> dict[str, Any]:
@@ -66,7 +74,9 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         self._trivia_cycle_task = None
 
     def _questions_remaining_after_current(self) -> bool:
-        return int(getattr(self.trivia, "current_index", -1)) < (len(getattr(self.trivia, "questions", [])) - 1)
+        return int(getattr(self.trivia, "current_index", -1)) < (
+            len(getattr(self.trivia, "questions", [])) - 1
+        )
 
     async def _async_trivia_timeout_runner(self, round_number: int, question_index: int, delay: float) -> None:
         try:
@@ -198,19 +208,25 @@ class TriviaCoreCoordinator(CardGameCoordinator):
                     difficulty=difficulty_value,
                     question_count=per_category,
                 )
+
             if self.parental_controls.get("enabled"):
                 questions, category_issues = moderate_trivia_questions(
                     questions,
                     content_mode=self.parental_controls.get("content_mode", "family_safe"),
                 )
                 moderation_issues.extend(category_issues)
+
             all_questions.extend(questions)
 
         all_questions = all_questions[: max(1, int(question_count))]
         if not all_questions:
             raise ValueError("No trivia questions remain after filtering")
 
-        if source_value != "offline_curated" and self.parental_controls.get("enabled") and self.parental_controls.get("require_ai_approval"):
+        if (
+            source_value != "offline_curated"
+            and self.parental_controls.get("enabled")
+            and self.parental_controls.get("require_ai_approval")
+        ):
             self._queue_ai_item(
                 "trivia",
                 "Mixed trivia",
