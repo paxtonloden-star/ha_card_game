@@ -344,6 +344,15 @@
           #hostModePanel[data-mode="cards"] .trivia-only,
           #hostModePanel[data-mode="judge_party"] .trivia-only { display: none !important; }
 
+          #hostControls.trivia-mode #hostSection-access,
+          #hostControls.trivia-mode #hostSection-advanced .cards-only,
+          #hostControls.cards-mode #hostSection-rounds .trivia-only,
+          #hostControls.cards-mode #hostSection-advanced .trivia-only,
+          #hostControls.judge-party-mode #hostSection-rounds .trivia-only,
+          #hostControls.judge-party-mode #hostSection-advanced .trivia-only {
+            display: none !important;
+          }
+
           #hostControls .legacy-trivia-control,
           #hostControls .legacy-trivia-control + div,
           #hostControls .legacy-trivia-control + select,
@@ -559,14 +568,28 @@
         const deckImportActions = doc.getElementById('exportDecksBtn')?.closest('.actions');
         const aiTools = doc.getElementById('aiToolsMount');
         const manualEditor = doc.getElementById('manualEditorMount');
+        if (deckImportGrid) deckImportGrid.classList.add('cards-only');
+        if (deckImportActions) deckImportActions.classList.add('cards-only');
 
         moveNodes(roundsBody, [modePanel, startActions]);
         moveNodes(playersBody, [playersHeading, playersList]);
         moveNodes(accessBody, [hostAccessBlock, instanceManager]);
         moveNodes(advancedBody, [deckImportGrid, deckImportActions, aiTools, manualEditor]);
 
-        const triviaMode = state?.game_mode === 'trivia';
+        const mode = state?.game_mode || 'cards';
+        const triviaMode = mode === 'trivia';
         hostControls.classList.toggle('trivia-mode', triviaMode);
+        hostControls.classList.toggle('cards-mode', mode === 'cards');
+        hostControls.classList.toggle('judge-party-mode', mode === 'judge_party');
+
+        const accessSection = doc.getElementById('hostSection-access');
+        if (accessSection) accessSection.dataset.hidden = triviaMode ? 'true' : 'false';
+
+        const advancedSection = doc.getElementById('hostSection-advanced');
+        if (advancedSection) advancedSection.dataset.hidden = 'false';
+
+        const playersSection = doc.getElementById('hostSection-players');
+        if (playersSection) playersSection.dataset.hidden = 'false';
       }
 
       function setValue(doc, id, value) {
@@ -679,6 +702,7 @@
 
             <div class="actions wrap">
               <button id="enhancedApplyModeBtn">Apply mode</button>
+              <button class="secondary" id="enhancedToggleSectionsBtn">Collapse extras</button>
               <button class="secondary trivia-only" id="enhancedPrepareTriviaBtn">Prepare trivia</button>
               <button class="secondary trivia-only" id="enhancedGenerateAiTriviaBtn">Generate AI trivia deck</button>
               <button class="secondary trivia-only" id="enhancedPauseTriviaBtn">Pause auto next</button>
@@ -696,6 +720,17 @@
             } catch (err) {
               win.setNotice('hostNotice', err.message, 'warning');
             }
+          });
+
+          doc.getElementById('enhancedToggleSectionsBtn').addEventListener('click', () => {
+            const button = doc.getElementById('enhancedToggleSectionsBtn');
+            const ids = ['hostSection-players', 'hostSection-access', 'hostSection-advanced'];
+            const detailsList = ids
+              .map((id) => doc.getElementById(id)?.querySelector('details'))
+              .filter(Boolean);
+            const anyOpen = detailsList.some((details) => details.open);
+            detailsList.forEach((details) => { details.open = !anyOpen; });
+            button.textContent = anyOpen ? 'Expand extras' : 'Collapse extras';
           });
 
           doc.getElementById('enhancedPrepareTriviaBtn').addEventListener('click', async () => {
@@ -861,6 +896,16 @@
           const backendAutoCycle = trivia.auto_cycle_enabled !== false;
           pauseBtn.classList.toggle('paused', triviaPaused || !backendAutoCycle);
           pauseBtn.textContent = (triviaPaused || !backendAutoCycle) ? 'Resume auto next' : 'Pause auto next';
+        }
+
+        const toggleBtn = doc.getElementById('enhancedToggleSectionsBtn');
+        if (toggleBtn) {
+          const ids = ['hostSection-players', 'hostSection-access', 'hostSection-advanced'];
+          const detailsList = ids
+            .map((id) => doc.getElementById(id)?.querySelector('details'))
+            .filter(Boolean);
+          const anyOpen = detailsList.some((details) => details.open);
+          toggleBtn.textContent = anyOpen ? 'Collapse extras' : 'Expand extras';
         }
       }
 
