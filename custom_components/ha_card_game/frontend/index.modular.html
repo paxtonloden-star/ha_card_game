@@ -368,6 +368,8 @@
 
           #enhancedTriviaCategorySelect { min-height: 140px; }
           #hostModePanel .pill-note { font-size: 12px; opacity: .75; }
+          #enhancedTtsTargetsSelect { min-height: 110px; }
+          #enhancedTtsNotice { font-size: 12px; opacity: .75; margin-top: 6px; }
         `;
         doc.head.appendChild(style);
 
@@ -599,6 +601,47 @@
         el.value = String(value);
       }
 
+
+      function fillSelectOptions(select, items, valueKey = 'value', labelKey = 'label', includeBlank = false, blankLabel = 'Choose...') {
+        if (!select) return;
+        const current = select.value;
+        const options = [];
+        if (includeBlank) options.push(`<option value="">${blankLabel}</option>`);
+        for (const item of items || []) {
+          const value = String(item?.[valueKey] ?? '');
+          const label = String(item?.[labelKey] ?? value);
+          options.push(`<option value="${value}">${label}</option>`);
+        }
+        select.innerHTML = options.join('');
+        if (current) select.value = current;
+      }
+
+      function fillMultiSelectOptions(select, items, selectedValues, valueKey = 'entity_id', labelKey = 'name') {
+        if (!select) return;
+        const selected = new Set((selectedValues || []).map((item) => String(item)));
+        select.innerHTML = (items || []).map((item) => {
+          const value = String(item?.[valueKey] ?? '');
+          const label = String(item?.[labelKey] ?? value);
+          return `<option value="${value}" ${selected.has(value) ? 'selected' : ''}>${label}</option>`;
+        }).join('');
+      }
+
+      async function saveVoiceSettings(win, doc) {
+        const speakerSelect = doc.getElementById('enhancedTtsTargetsSelect');
+        const speakerTargets = Array.from(speakerSelect?.selectedOptions || []).map((option) => option.value).filter(Boolean);
+        await win.hostAction('set_trivia_voice_config', {
+          enabled: doc.getElementById('enhancedTtsEnabledSelect').value === 'true',
+          provider_entity: doc.getElementById('enhancedTtsProviderSelect').value || '',
+          speaker_targets: speakerTargets,
+          voice: doc.getElementById('enhancedTtsVoiceInput').value || '',
+          language: doc.getElementById('enhancedTtsLanguageInput').value || '',
+          announce_answers: doc.getElementById('enhancedAnnounceAnswersSelect').value === 'true',
+          announce_correct_players: doc.getElementById('enhancedAnnouncePlayersSelect').value === 'true',
+          start_timer_after_voice: doc.getElementById('enhancedTimerAfterVoiceSelect').value === 'true',
+          speech_rate_wpm: parseInt(doc.getElementById('enhancedSpeechRateInput').value || '155', 10),
+        });
+      }
+
       function ensureHostModePanel(win, doc, state) {
         const hostControls = doc.getElementById('hostControls');
         if (!hostControls) return;
@@ -700,9 +743,63 @@
               </div>
             </div>
 
+
+            <div class="subgrid trivia-only">
+              <div>
+                <label class="label" for="enhancedTtsEnabledSelect">Voice host</label>
+                <select id="enhancedTtsEnabledSelect">
+                  <option value="false">Off</option>
+                  <option value="true">On</option>
+                </select>
+              </div>
+              <div>
+                <label class="label" for="enhancedTtsProviderSelect">TTS provider</label>
+                <select id="enhancedTtsProviderSelect"></select>
+              </div>
+              <div>
+                <label class="label" for="enhancedTtsVoiceInput">Voice name</label>
+                <input id="enhancedTtsVoiceInput" placeholder="alloy, shimmer, narrator..." />
+              </div>
+              <div>
+                <label class="label" for="enhancedTtsLanguageInput">Language</label>
+                <input id="enhancedTtsLanguageInput" placeholder="en, en-US..." />
+              </div>
+              <div>
+                <label class="label" for="enhancedSpeechRateInput">Speech rate WPM</label>
+                <input id="enhancedSpeechRateInput" type="number" min="80" max="260" step="5" value="155" />
+              </div>
+              <div>
+                <label class="label" for="enhancedTimerAfterVoiceSelect">Start timer after speech</label>
+                <select id="enhancedTimerAfterVoiceSelect">
+                  <option value="true">On</option>
+                  <option value="false">Off</option>
+                </select>
+              </div>
+              <div>
+                <label class="label" for="enhancedAnnounceAnswersSelect">Read correct answer</label>
+                <select id="enhancedAnnounceAnswersSelect">
+                  <option value="true">On</option>
+                  <option value="false">Off</option>
+                </select>
+              </div>
+              <div>
+                <label class="label" for="enhancedAnnouncePlayersSelect">Read winners</label>
+                <select id="enhancedAnnouncePlayersSelect">
+                  <option value="true">On</option>
+                  <option value="false">Off</option>
+                </select>
+              </div>
+              <div style="grid-column: 1 / -1;">
+                <label class="label" for="enhancedTtsTargetsSelect">Speaker targets</label>
+                <select id="enhancedTtsTargetsSelect" multiple></select>
+                <div id="enhancedTtsNotice">Pick one TTS provider and one or more media players.</div>
+              </div>
+            </div>
+
             <div class="actions wrap">
               <button id="enhancedApplyModeBtn">Apply mode</button>
               <button class="secondary" id="enhancedToggleSectionsBtn">Collapse extras</button>
+              <button class="secondary trivia-only" id="enhancedSaveVoiceBtn">Save voice settings</button>
               <button class="secondary trivia-only" id="enhancedPrepareTriviaBtn">Prepare trivia</button>
               <button class="secondary trivia-only" id="enhancedGenerateAiTriviaBtn">Generate AI trivia deck</button>
               <button class="secondary trivia-only" id="enhancedPauseTriviaBtn">Pause auto next</button>
@@ -733,6 +830,28 @@
             button.textContent = anyOpen ? 'Expand extras' : 'Collapse extras';
           });
 
+          doc.getElementById('enhancedSaveVoiceBtn').addEventListener('click', async () => {
+            const button = doc.getElementById('enhancedSaveVoiceBtn');
+            const originalText = button.textContent;
+            try {
+              button.disabled = true;
+              button.textContent = 'Please wait…';
+              win.setNotice('hostExtraNotice', 'Saving voice settings…', '');
+              await saveVoiceSettings(win, doc);
+              if (typeof win.fetchState === 'function') {
+                await win.fetchState().catch(() => {});
+              }
+              win.setNotice('hostExtraNotice', 'Voice settings saved.', 'success');
+            } catch (err) {
+              win.setNotice('hostExtraNotice', err.message, 'warning');
+            } finally {
+              hostEditing = false;
+              hostEditUntil = 0;
+              button.disabled = false;
+              button.textContent = originalText;
+            }
+          });
+
           doc.getElementById('enhancedPrepareTriviaBtn').addEventListener('click', async () => {
             const button = doc.getElementById('enhancedPrepareTriviaBtn');
             const originalText = button.textContent;
@@ -750,6 +869,7 @@
               const source = doc.getElementById('enhancedTriviaSourceSelect').value || 'offline_curated';
 
               await win.hostAction('set_game_mode', { game_mode: 'trivia' });
+              await saveVoiceSettings(win, doc);
               await win.hostAction('set_trivia_settings', {
                 team_mode: doc.getElementById('enhancedTriviaTeamModeSelect').value === 'true',
                 buzzer_mode: doc.getElementById('enhancedTriviaBuzzerModeSelect').value === 'true',
@@ -794,6 +914,7 @@
               const aiTheme = (doc.getElementById('enhancedAiTriviaThemeInput').value || '').trim();
 
               await win.hostAction('set_game_mode', { game_mode: 'trivia' });
+              await saveVoiceSettings(win, doc);
               await win.hostAction('set_trivia_settings', {
                 team_mode: doc.getElementById('enhancedTriviaTeamModeSelect').value === 'true',
                 buzzer_mode: doc.getElementById('enhancedTriviaBuzzerModeSelect').value === 'true',
@@ -827,6 +948,7 @@
           doc.getElementById('enhancedStartTriviaBtn').addEventListener('click', async () => {
             try {
               await win.hostAction('set_game_mode', { game_mode: 'trivia' });
+              await saveVoiceSettings(win, doc);
               await win.hostAction('start_trivia_round');
               win.setNotice('hostExtraNotice', 'Trivia round started.', 'success');
             } catch (err) {
@@ -890,7 +1012,6 @@
         setValue(doc, 'enhancedTriviaBuzzerModeSelect', String(Boolean(trivia.buzzer_mode)));
         setValue(doc, 'enhancedTriviaBuzzBonusInput', trivia.buzz_bonus ?? 1);
         setValue(doc, 'enhancedTriviaStealEnabledSelect', String(Boolean(trivia.steal_enabled)));
-        setValue(doc, 'enhancedTtsEnabledSelect', 'false');
         const pauseBtn = doc.getElementById('enhancedPauseTriviaBtn');
         if (pauseBtn) {
           const backendAutoCycle = trivia.auto_cycle_enabled !== false;
