@@ -16,10 +16,11 @@ from .coordinator import CardGameCoordinator
 
 async def async_register_api(hass: HomeAssistant, coordinator: CardGameCoordinator) -> None:
     """Register API views."""
-    try:
-        coordinator.base_url = get_url(hass)
-    except Exception:  # pragma: no cover - fallback if URL not configured
-        coordinator.base_url = ""
+    if not str(coordinator.base_url or "").strip():
+        try:
+            coordinator.base_url = str(get_url(hass)).strip().rstrip("/")
+        except Exception:  # pragma: no cover - fallback if URL not configured
+            coordinator.base_url = ""
 
     hass.http.register_view(CardGameStateView(coordinator))
     hass.http.register_view(CardGameJoinView(coordinator))
