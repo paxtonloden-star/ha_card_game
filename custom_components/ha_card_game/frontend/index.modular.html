@@ -1,8 +1,8 @@
 <!doctype html>
 <html>
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset=\"utf-8\" />
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
     <title>HA Card Game</title>
     <style>
       html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #0b1020; }
@@ -10,7 +10,7 @@
     </style>
   </head>
   <body>
-    <iframe id="legacyFrame" title="HA Card Game" referrerpolicy="same-origin"></iframe>
+    <iframe id=\"legacyFrame\" title=\"HA Card Game\" referrerpolicy=\"same-origin\"></iframe>
     <script>
       const frame = document.getElementById('legacyFrame');
       const target = new URL('/local/ha_card_game/index.html', window.location.origin);
@@ -18,14 +18,20 @@
       target.hash = window.location.hash;
       frame.src = target.toString();
 
+      let syncLoop = null;
+      let timerLoop = null;
+      let hostEditing = false;
+      let hostEditUntil = 0;
+      let triviaPaused = false;
+      let triviaAutoAdvanceTimer = null;
+      let triviaAutoAdvanceKey = '';
 
-
-      function markHostEditing(ms = 4000) {
+      function markHostEditing(ms = 5000) {
         hostEditing = true;
         hostEditUntil = Date.now() + ms;
       }
 
-      function clearHostEditingSoon(ms = 600) {
+      function clearHostEditingSoon(ms = 800) {
         hostEditUntil = Date.now() + ms;
         window.setTimeout(() => {
           if (Date.now() >= hostEditUntil) hostEditing = false;
@@ -43,97 +49,17 @@
       function wireHostEditingGuards(doc) {
         if (doc.__hostEditingGuardsApplied) return;
         doc.__hostEditingGuardsApplied = true;
-
         doc.addEventListener('focusin', (event) => {
-          const target = event.target;
-          if (!target) return;
-          const tag = (target.tagName || '').toLowerCase();
-          if (tag === 'input' || tag === 'select' || tag === 'textarea') {
-            markHostEditing(8000);
-          }
+          const tag = (event.target?.tagName || '').toLowerCase();
+          if (tag === 'input' || tag === 'select' || tag === 'textarea') markHostEditing(8000);
         });
-
         doc.addEventListener('input', (event) => {
-          const target = event.target;
-          if (!target) return;
-          const tag = (target.tagName || '').toLowerCase();
-          if (tag === 'input' || tag === 'select' || tag === 'textarea') {
-            markHostEditing(8000);
-          }
+          const tag = (event.target?.tagName || '').toLowerCase();
+          if (tag === 'input' || tag === 'select' || tag === 'textarea') markHostEditing(8000);
         });
-
         doc.addEventListener('change', () => markHostEditing(3000));
         doc.addEventListener('focusout', () => clearHostEditingSoon(800));
       }
-
-      function clearTriviaAutoAdvanceFallback() {
-        if (triviaAutoAdvanceTimer) {
-          clearTimeout(triviaAutoAdvanceTimer);
-          triviaAutoAdvanceTimer = null;
-        }
-        triviaAutoAdvanceKey = '';
-      }
-
-      function scheduleTriviaAutoAdvanceFallback(win) {
-        try {
-          const state = win?.latestState;
-          if (!state || state.game_mode !== 'trivia' || triviaPaused) {
-            clearTriviaAutoAdvanceFallback();
-            return;
-          }
-          const trivia = state.trivia || {};
-          const revealSeconds = Number(trivia.reveal_seconds || 0);
-          const autoCycleEnabled = trivia.auto_cycle_enabled !== false;
-          const remaining = Number(trivia.remaining ?? 0);
-          const key = [
-            state.state || '',
-            state.round_number || 0,
-            state.winner || '',
-            trivia.current_index ?? -1,
-            revealSeconds,
-            autoCycleEnabled,
-            remaining
-          ].join('|');
-
-          if (state.state !== 'results' || !autoCycleEnabled || revealSeconds <= 0 || remaining <= 0) {
-            clearTriviaAutoAdvanceFallback();
-            return;
-          }
-
-          if (triviaAutoAdvanceKey === key && triviaAutoAdvanceTimer) return;
-
-          clearTriviaAutoAdvanceFallback();
-          triviaAutoAdvanceKey = key;
-          triviaAutoAdvanceTimer = setTimeout(async () => {
-            try {
-              const current = win?.latestState;
-              const currentTrivia = current?.trivia || {};
-              const currentKey = [
-                current?.state || '',
-                current?.round_number || 0,
-                current?.winner || '',
-                currentTrivia.current_index ?? -1,
-                Number(currentTrivia.reveal_seconds || 0),
-                currentTrivia.auto_cycle_enabled !== false,
-                Number(currentTrivia.remaining ?? 0)
-              ].join('|');
-
-              if (currentKey !== key) return;
-              if (typeof win?.hostAction === 'function') {
-                await win.hostAction('start_trivia_round');
-                if (typeof win?.fetchState === 'function') {
-                  await win.fetchState().catch(() => {});
-                }
-              }
-            } catch (_err) {
-            } finally {
-              triviaAutoAdvanceTimer = null;
-            }
-          }, Math.max(500, revealSeconds * 1000 + 250));
-        } catch (_err) {
-        }
-      }
-
 
       async function loadHostBootstrap(win) {
         try {
@@ -150,307 +76,58 @@
         }
       }
 
-      function tryEnhanceLegacy() {
-        const win = frame.contentWindow;
-        const doc = frame.contentDocument;
-        if (!win || !doc || !doc.body) return false;
-        wireHostEditingGuards(doc);
+      function setValue(doc, id, value) {
+        const el = doc.getElementById(id);
+        if (!el || value == null) return;
+        if (doc.activeElement === el) return;
+        el.value = String(value);
+      }
 
-        if (win.__cardGamesWrapperEnhancementsApplied) {
-          if (win.latestState) {
-            try { enhanceUi(win, doc, win.latestState); scheduleTriviaAutoAdvanceFallback(win); } catch (_err) {}
-          }
-          return true;
+      function fillSelectOptions(select, items, valueKey='value', labelKey='label', includeBlank=false, blankLabel='Choose...') {
+        if (!select) return;
+        const current = select.value;
+        const options = [];
+        if (includeBlank) options.push(`<option value="">${blankLabel}</option>`);
+        for (const item of items || []) {
+          const value = String(item?.[valueKey] ?? '');
+          const label = String(item?.[labelKey] ?? value);
+          options.push(`<option value="${value}">${label}</option>`);
         }
+        select.innerHTML = options.join('');
+        if (current) select.value = current;
+      }
 
-        if (typeof win.render !== 'function' || typeof win.hostAction !== 'function') return false;
-        win.__cardGamesWrapperEnhancementsApplied = true;
-
-        const style = doc.createElement('style');
-        style.textContent = `
-          #triviaQuestionPrompt, #playerPromptCard {
-            margin-bottom: 12px;
-            padding: 16px 18px;
-            border-radius: 18px;
-            position: relative;
-            overflow: hidden;
-            isolation: isolate;
-          }
-          #triviaQuestionPrompt {
-            background: rgba(124,156,255,.10);
-            border: 1px solid rgba(124,156,255,.24);
-          }
-          #playerPromptCard {
-            background: #111;
-            color: #fff;
-            border: 1px solid rgba(255,255,255,.18);
-            box-shadow: 0 18px 36px rgba(0,0,0,.28);
-          }
-          #playerPromptCard::before,
-          #triviaQuestionPrompt::before,
-          .enhanced-hand-card::before {
-            content: 'CARD GAMES';
-            position: absolute;
-            inset: auto 10px 8px auto;
-            font-size: 20px;
-            font-weight: 900;
-            letter-spacing: .14em;
-            opacity: .06;
-            pointer-events: none;
-            white-space: nowrap;
-            transform: rotate(-18deg);
-            z-index: -1;
-          }
-          #playerPromptCard::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(180deg, rgba(255,255,255,.05), transparent 28%);
-            pointer-events: none;
-          }
-          #playerPromptCard .prompt-label,
-          #triviaQuestionPrompt .q-badge {
-            flex: 0 0 auto;
-            font-size: 28px;
-            font-weight: 900;
-            line-height: 1;
-          }
-          #playerPromptCard .prompt-label { color: rgba(255,255,255,.86); }
-          #playerPromptCard .prompt-row,
-          #triviaQuestionPrompt .q-row { display: flex; gap: 12px; align-items: flex-start; }
-          #playerPromptCard .prompt-body,
-          #triviaQuestionPrompt .q-body { min-width: 0; flex: 1 1 auto; }
-          #playerPromptCard .prompt-text,
-          #triviaQuestionPrompt .q-text {
-            font-size: 19px;
-            font-weight: 800;
-            line-height: 1.36;
-          }
-          #playerPromptCard .prompt-meta {
-            margin-top: 10px;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: .1em;
-            opacity: .7;
-            font-weight: 800;
-          }
-          #triviaQuestionPrompt .q-badge { color: #9bb6ff; }
-          #triviaQuestionPrompt .q-timer-row { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
-          #triviaQuestionPrompt .q-timer-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; opacity: .7; }
-          #triviaQuestionPrompt .q-timer-badge {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 70px;
-            padding: 6px 10px;
-            border-radius: 999px;
-            font-weight: 800;
-            background: rgba(124,156,255,.18);
-            border: 1px solid rgba(124,156,255,.25);
-          }
-          #triviaQuestionPrompt .q-timer-badge.warning {
-            background: rgba(245,158,11,.18);
-            border-color: rgba(245,158,11,.35);
-            color: #ffd089;
-          }
-          #triviaQuestionPrompt .q-timer-badge.danger {
-            background: rgba(239,68,68,.18);
-            border-color: rgba(239,68,68,.35);
-            color: #ffb0b0;
-          }
-          #triviaQuestionPrompt .q-timer-note { font-size: 12px; opacity: .72; }
-
-          #handList.enhanced-card-hand {
-            display: grid !important;
-            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-            gap: 14px;
-            align-items: stretch;
-          }
-          .enhanced-hand-card {
-            position: relative;
-            display: flex;
-            min-height: 220px;
-            padding: 16px;
-            border-radius: 18px;
-            background: #fff;
-            color: #111;
-            border: 1px solid rgba(0,0,0,.12);
-            box-shadow: 0 12px 28px rgba(0,0,0,.18);
-            overflow: hidden;
-            transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
-          }
-          .enhanced-hand-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 18px 34px rgba(0,0,0,.22);
-          }
-          .enhanced-hand-card.selected {
-            border-color: rgba(67, 97, 238, .65);
-            box-shadow: 0 0 0 3px rgba(67,97,238,.12), 0 18px 34px rgba(0,0,0,.22);
-          }
-          .enhanced-hand-card .card-index {
-            position: absolute;
-            top: 12px;
-            right: 12px;
-            width: 26px;
-            height: 26px;
-            border-radius: 999px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            font-weight: 800;
-            background: rgba(17,17,17,.08);
-          }
-          .enhanced-hand-card .card-text {
-            margin-top: auto;
-            white-space: normal;
-            font-size: 20px;
-            line-height: 1.28;
-            font-weight: 700;
-          }
-          .enhanced-hand-card .card-brand {
-            position: absolute;
-            left: 14px;
-            top: 12px;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: .12em;
-            opacity: .72;
-            font-weight: 800;
-          }
-
-          #hostModePanel.card {
-            margin-bottom: 16px;
-            border: 1px solid rgba(124,156,255,.24);
-            background: rgba(124,156,255,.08);
-          }
-          #hostModePanel .control-grid,
-          #hostModePanel .subgrid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-            gap: 12px;
-          }
-          #hostModePanel .subgrid {
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid rgba(255,255,255,.08);
-          }
-
-          .host-section details {
-            border: 1px solid rgba(255,255,255,.08);
-            border-radius: 14px;
-            background: rgba(10,16,32,.45);
-            margin-top: 12px;
-            overflow: hidden;
-          }
-          .host-section summary {
-            cursor: pointer;
-            list-style: none;
-            padding: 14px 16px;
-            font-weight: 700;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-          }
-          .host-section summary::-webkit-details-marker { display: none; }
-          .host-section .section-body { padding: 0 16px 16px; }
-          .host-section[data-hidden="true"] { display: none !important; }
-
-          #hostModePanel[data-mode="trivia"] .cards-only { display: none !important; }
-          #hostModePanel[data-mode="cards"] .trivia-only,
-          #hostModePanel[data-mode="judge_party"] .trivia-only { display: none !important; }
-
-          #hostControls.trivia-mode #hostSection-access,
-          #hostControls.trivia-mode #hostSection-advanced .cards-only,
-          #hostControls.cards-mode #hostSection-rounds .trivia-only,
-          #hostControls.cards-mode #hostSection-advanced .trivia-only,
-          #hostControls.judge-party-mode #hostSection-rounds .trivia-only,
-          #hostControls.judge-party-mode #hostSection-advanced .trivia-only {
-            display: none !important;
-          }
-
-          #hostControls .legacy-trivia-control,
-          #hostControls .legacy-trivia-control + div,
-          #hostControls .legacy-trivia-control + select,
-          #hostControls .legacy-trivia-control + input,
-          #hostControls .legacy-trivia-control + label,
-          #hostControls.trivia-mode #deckSelect,
-          #hostControls.trivia-mode #deckDescription,
-          #hostControls.trivia-mode #selectedDeckMode,
-          #hostControls.trivia-mode .timer-block,
-          #hostControls.trivia-mode .reveal-settings {
-            display: none !important;
-          }
-
-          #enhancedTriviaCategorySelect { min-height: 140px; }
-          #hostModePanel .pill-note { font-size: 12px; opacity: .75; }
-          #enhancedTtsTargetsSelect { min-height: 110px; }
-          #enhancedTtsNotice { font-size: 12px; opacity: .75; margin-top: 6px; }
-          #enhancedTriviaImportJson {
-            width: 100%;
-            min-height: 190px;
-            border-radius: 12px;
-          }
-          #enhancedTriviaImportNotice {
-            min-height: 18px;
-          }
-        `;
-        doc.head.appendChild(style);
-
-        const originalRender = win.render.bind(win);
-        win.render = function(state) {
-          const result = originalRender(state);
-          setTimeout(() => { try { enhanceUi(win, doc, state); scheduleTriviaAutoAdvanceFallback(win); } catch (err) { console.error(err); } }, 0);
-          return result;
-        };
-
-        const originalBootstrapHost = typeof win.bootstrapHost === 'function' ? win.bootstrapHost.bind(win) : null;
-        if (originalBootstrapHost) {
-          win.bootstrapHost = async function(...args) {
-            const result = await originalBootstrapHost(...args);
-            setTimeout(() => { try { enhanceUi(win, doc, win.latestState || null); scheduleTriviaAutoAdvanceFallback(win); } catch (err) { console.error(err); } }, 0);
-            return result;
-          };
-        }
-
-        if (win.latestState) {
-          try { enhanceUi(win, doc, win.latestState); } catch (_err) {}
-        }
-        return true;
+      function fillMultiSelectOptions(select, items, selectedValues, valueKey='entity_id', labelKey='name') {
+        if (!select) return;
+        const selected = new Set((selectedValues || []).map((item) => String(item)));
+        select.innerHTML = (items || []).map((item) => {
+          const value = String(item?.[valueKey] ?? '');
+          const label = String(item?.[labelKey] ?? value);
+          return `<option value="${value}" ${selected.has(value) ? 'selected' : ''}>${label}</option>`;
+        }).join('');
       }
 
       function getTriviaCategoryOptions(win, doc) {
         const map = new Map();
-
-        const select = doc.getElementById('triviaCategorySelect');
-        if (select) {
-          Array.from(select.options || []).forEach((option) => {
+        const legacySelect = doc.getElementById('triviaCategorySelect');
+        if (legacySelect) {
+          Array.from(legacySelect.options || []).forEach((option) => {
             const value = String(option.value || '').trim();
-            if (value) {
-              map.set(value, option.textContent || value);
-            }
+            if (value) map.set(value, option.textContent || value);
           });
         }
-
-        const stateCustomPacks = win.latestState?.trivia?.custom_packs || [];
-        stateCustomPacks.forEach((pack) => {
+        (win.latestState?.trivia?.custom_packs || []).forEach((pack) => {
           const value = String(pack.slug || '').trim();
-          if (value) {
-            map.set(value, pack.name || value);
-          }
+          if (value) map.set(value, pack.name || value);
         });
-
-        const bootstrapCustomPacks =
-          win.hostBootstrap?.host?.custom_trivia_packs ||
-          win.hostBootstrap?.custom_trivia_packs ||
-          [];
-        bootstrapCustomPacks.forEach((pack) => {
+        (win.hostBootstrap?.host?.trivia?.categories || []).forEach((value) => {
+          const clean = String(value || '').trim();
+          if (clean && !map.has(clean)) map.set(clean, clean);
+        });
+        (win.hostBootstrap?.host?.custom_trivia_packs || []).forEach((pack) => {
           const value = String(pack.slug || '').trim();
-          if (value) {
-            map.set(value, pack.name || value);
-          }
+          if (value) map.set(value, pack.name || value);
         });
-
         return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
       }
 
@@ -476,14 +153,9 @@
         const remaining = endsAt ? Math.max(0, Math.ceil(endsAt - Date.now() / 1000)) : 0;
         badge.classList.toggle('warning', remaining <= 15 && remaining > 5);
         badge.classList.toggle('danger', remaining <= 5 && remaining >= 0);
-        if (state?.state === 'results') {
-          const revealSeconds = Number(state?.trivia?.reveal_seconds || 5);
-          note.textContent = `Answer shown now${revealSeconds > 0 ? ` · next question after about ${revealSeconds}s` : ''}`;
-        } else if (totalSeconds && endsAt) {
-          note.textContent = 'Time remaining to answer';
-        } else {
-          note.textContent = 'Timer starts when the trivia round begins';
-        }
+        note.textContent = state?.state === 'results'
+          ? `Answer shown now${Number(state?.trivia?.reveal_seconds || 5) > 0 ? ` · next question after about ${Number(state?.trivia?.reveal_seconds || 5)}s` : ''}`
+          : (totalSeconds && endsAt ? 'Time remaining to answer' : 'Timer starts when the trivia round begins');
       }
 
       function ensurePromptCard(win, doc, state) {
@@ -498,10 +170,9 @@
           submitPanel.insertBefore(prompt, handList);
         }
         const isCardsMode = state?.game_mode === 'cards' || state?.game_mode === 'judge_party';
-        const promptText = state?.current_prompt || '';
-        prompt.style.display = isCardsMode && promptText ? '' : 'none';
+        prompt.style.display = isCardsMode && state?.current_prompt ? '' : 'none';
         const textNode = prompt.querySelector('.prompt-text');
-        if (textNode) textNode.textContent = promptText || '';
+        if (textNode) textNode.textContent = state?.current_prompt || '';
       }
 
       function ensureTriviaQuestionPrompt(win, doc, state) {
@@ -515,11 +186,9 @@
           prompt.innerHTML = '<div class="q-row"><div class="q-badge">Q:</div><div class="q-body"><div class="q-text"></div><div class="q-timer-row"><span class="q-timer-label">Timer</span><span class="q-timer-badge" id="triviaQuestionTimerBadge">No timer</span><span class="q-timer-note" id="triviaQuestionTimerNote">Timer starts when the trivia round begins</span></div></div></div>';
           submitPanel.insertBefore(prompt, handList);
         }
-        const isTrivia = state?.game_mode === 'trivia';
-        const questionText = state?.trivia?.current_question?.question || state?.current_prompt || '';
-        prompt.style.display = isTrivia ? '' : 'none';
+        prompt.style.display = state?.game_mode === 'trivia' ? '' : 'none';
         const textNode = prompt.querySelector('.q-text');
-        if (textNode) textNode.textContent = questionText || 'Waiting for the next trivia question…';
+        if (textNode) textNode.textContent = state?.trivia?.current_question?.question || state?.current_prompt || 'Waiting for the next trivia question…';
         renderQuestionTimer(win, doc, state);
       }
 
@@ -528,8 +197,7 @@
         if (!handList) return;
         const isCardsMode = state?.game_mode === 'cards' || state?.game_mode === 'judge_party';
         handList.classList.toggle('enhanced-card-hand', isCardsMode);
-        const cards = Array.from(handList.children || []);
-        cards.forEach((card, index) => {
+        Array.from(handList.children || []).forEach((card, index) => {
           if (!(card instanceof HTMLElement)) return;
           if (!isCardsMode) {
             card.classList.remove('enhanced-hand-card');
@@ -574,16 +242,7 @@
       }
 
       function markLegacyTriviaControls(doc) {
-        [
-          'triviaCategorySelect',
-          'triviaTeamModeSelect',
-          'triviaBuzzerModeSelect',
-          'triviaBuzzBonusInput',
-          'triviaStealEnabledSelect',
-          'triviaCountInput',
-          'triviaAgeRangeSelect',
-          'triviaSourceSelect'
-        ].forEach((id) => {
+        ['triviaCategorySelect','triviaTeamModeSelect','triviaBuzzerModeSelect','triviaBuzzBonusInput','triviaStealEnabledSelect','triviaCountInput','triviaAgeRangeSelect','triviaSourceSelect'].forEach((id) => {
           const el = doc.getElementById(id);
           if (el) {
             el.classList.add('legacy-trivia-control');
@@ -593,87 +252,14 @@
         });
       }
 
-      function arrangeHostSections(win, doc, state) {
-        const hostControls = doc.getElementById('hostControls');
-        if (!hostControls) return;
-
-        const roundsBody = createSection(doc, hostControls, 'hostSection-rounds', 'Game mode & rounds', true);
-        const playersBody = createSection(doc, hostControls, 'hostSection-players', 'Players', true);
-        const accessBody = createSection(doc, hostControls, 'hostSection-access', 'Room & host access', false);
-        const advancedBody = createSection(doc, hostControls, 'hostSection-advanced', 'Trivia packs, AI, and imports', false);
-
-        const modePanel = doc.getElementById('hostModePanel');
-        const startActions = doc.getElementById('hostStartBtn')?.parentElement;
-        const playersHeading = Array.from(hostControls.querySelectorAll('h3')).find((node) => node.textContent.trim() === 'Players');
-        const playersList = doc.getElementById('playersList');
-        const hostAccessBlock = doc.getElementById('hostUsersSelect')?.closest('.reveal-settings');
-        const instanceManager = doc.getElementById('instanceManager');
-        const deckImportGrid = doc.getElementById('deckImportModeSelect')?.closest('.control-grid');
-        const deckImportActions = doc.getElementById('exportDecksBtn')?.closest('.actions');
-        const aiTools = doc.getElementById('aiToolsMount');
-        const manualEditor = doc.getElementById('manualEditorMount');
-        if (deckImportGrid) deckImportGrid.classList.add('cards-only');
-        if (deckImportActions) deckImportActions.classList.add('cards-only');
-
-        moveNodes(roundsBody, [modePanel, startActions]);
-        moveNodes(playersBody, [playersHeading, playersList]);
-        moveNodes(accessBody, [hostAccessBlock, instanceManager]);
-        moveNodes(advancedBody, [deckImportGrid, deckImportActions, aiTools, manualEditor]);
-
-        const mode = state?.game_mode || 'cards';
-        const triviaMode = mode === 'trivia';
-        hostControls.classList.toggle('trivia-mode', triviaMode);
-        hostControls.classList.toggle('cards-mode', mode === 'cards');
-        hostControls.classList.toggle('judge-party-mode', mode === 'judge_party');
-
-        const accessSection = doc.getElementById('hostSection-access');
-        if (accessSection) accessSection.dataset.hidden = triviaMode ? 'true' : 'false';
-
-        const advancedSection = doc.getElementById('hostSection-advanced');
-        if (advancedSection) advancedSection.dataset.hidden = 'false';
-
-        const playersSection = doc.getElementById('hostSection-players');
-        if (playersSection) playersSection.dataset.hidden = 'false';
-      }
-
-      function setValue(doc, id, value) {
-        const el = doc.getElementById(id);
-        if (el == null || value == null) return;
-        if (doc.activeElement === el) return;
-        el.value = String(value);
-      }
-
-
-      function fillSelectOptions(select, items, valueKey = 'value', labelKey = 'label', includeBlank = false, blankLabel = 'Choose...') {
-        if (!select) return;
-        const current = select.value;
-        const options = [];
-        if (includeBlank) options.push(`<option value="">${blankLabel}</option>`);
-        for (const item of items || []) {
-          const value = String(item?.[valueKey] ?? '');
-          const label = String(item?.[labelKey] ?? value);
-          options.push(`<option value="${value}">${label}</option>`);
-        }
-        select.innerHTML = options.join('');
-        if (current) select.value = current;
-      }
-
-      function fillMultiSelectOptions(select, items, selectedValues, valueKey = 'entity_id', labelKey = 'name') {
-        if (!select) return;
-        const selected = new Set((selectedValues || []).map((item) => String(item)));
-        select.innerHTML = (items || []).map((item) => {
-          const value = String(item?.[valueKey] ?? '');
-          const label = String(item?.[labelKey] ?? value);
-          return `<option value="${value}" ${selected.has(value) ? 'selected' : ''}>${label}</option>`;
-        }).join('');
-      }
-
       async function saveVoiceSettings(win, doc) {
+        const provider = doc.getElementById('enhancedTtsProviderSelect');
+        if (!provider) return;
         const speakerSelect = doc.getElementById('enhancedTtsTargetsSelect');
         const speakerTargets = Array.from(speakerSelect?.selectedOptions || []).map((option) => option.value).filter(Boolean);
         await win.hostAction('set_trivia_voice_config', {
           enabled: doc.getElementById('enhancedTtsEnabledSelect').value === 'true',
-          provider_entity: doc.getElementById('enhancedTtsProviderSelect').value || '',
+          provider_entity: provider.value || '',
           speaker_targets: speakerTargets,
           voice: doc.getElementById('enhancedTtsVoiceInput').value || '',
           language: doc.getElementById('enhancedTtsLanguageInput').value || '',
@@ -684,25 +270,15 @@
         });
       }
 
-
-      async function importTriviaPackFromPayload(win, doc, payload) {
-        if (!payload || typeof payload !== 'object') {
-          throw new Error('Trivia import payload must be a JSON object');
-        }
+      async function importTriviaPackFromPayload(win, payload) {
+        if (!payload || typeof payload !== 'object') throw new Error('Trivia import payload must be a JSON object');
         const slug = String(payload.slug || payload.name || '').trim();
         const name = String(payload.name || payload.slug || '').trim();
         const description = String(payload.description || '').trim();
         const questions = Array.isArray(payload.questions) ? payload.questions : [];
-
         if (!name) throw new Error('Trivia pack name is required');
         if (!questions.length) throw new Error('Trivia pack must contain at least one question');
-
-        await win.hostAction('import_trivia_pack', {
-          slug,
-          name,
-          description,
-          questions,
-        });
+        await win.hostAction('import_trivia_pack', { slug, name, description, questions });
       }
 
       async function readJsonFile(file) {
@@ -713,7 +289,6 @@
       function ensureHostModePanel(win, doc, state) {
         const hostControls = doc.getElementById('hostControls');
         if (!hostControls) return;
-
         markLegacyTriviaControls(doc);
 
         let panel = doc.getElementById('hostModePanel');
@@ -739,13 +314,14 @@
               </div>
               <div class="trivia-only">
                 <label class="label" for="enhancedTriviaCountInput">Question count</label>
-                <input id="enhancedTriviaCountInput" type="number" min="1" max="50" step="1" value="25" />
+                <input id="enhancedTriviaCountInput" type="number" min="1" max="100" step="1" value="25" />
               </div>
               <div class="trivia-only">
                 <label class="label" for="enhancedTriviaAgeRangeSelect">Age range</label>
                 <select id="enhancedTriviaAgeRangeSelect">
-                  <option value="kids">Kids</option>
-                  <option value="teens">Teens</option>
+                  <option value="6_8">6-8</option>
+                  <option value="9_12">9-12</option>
+                  <option value="13_17">13-17</option>
                   <option value="18_plus">18+</option>
                 </select>
               </div>
@@ -809,38 +385,16 @@
             </div>
 
             <div class="subgrid trivia-only">
-              <div>
-                <label class="label" for="enhancedTtsEnabledSelect">Voice host</label>
-                <select id="enhancedTtsEnabledSelect">
-                  <option value="false">Off</option>
-                  <option value="true">On</option>
-                </select>
-              </div>
-              <div>
-                <label class="label" for="enhancedTtsProviderSelect">TTS provider</label>
-                <select id="enhancedTtsProviderSelect">
-                  <option value="">Backend needed</option>
-                  <option value="openai">OpenAI</option>
-                  <option value="home_assistant">Home Assistant TTS</option>
-                </select>
-              </div>
-              <div>
-                <label class="label" for="enhancedTtsTargetsInput">Speaker targets</label>
-                <input id="enhancedTtsTargetsInput" placeholder="media_player.kitchen, media_player.living_room" />
-              </div>
               <div style="grid-column: 1 / -1;">
-                <div id="enhancedTtsNotice">Voice controls are visual only right now. Backend support is still needed for provider selection, multiple speaker targets, and starting the timer after speech finishes.</div>
+                <label class="label" for="enhancedAiTriviaThemeInput">AI trivia theme</label>
+                <input id="enhancedAiTriviaThemeInput" placeholder="Road trip facts, retro games, science fiction..." />
               </div>
             </div>
-
 
             <div class="subgrid trivia-only">
               <div>
                 <label class="label" for="enhancedTtsEnabledSelect">Voice host</label>
-                <select id="enhancedTtsEnabledSelect">
-                  <option value="false">Off</option>
-                  <option value="true">On</option>
-                </select>
+                <select id="enhancedTtsEnabledSelect"><option value="false">Off</option><option value="true">On</option></select>
               </div>
               <div>
                 <label class="label" for="enhancedTtsProviderSelect">TTS provider</label>
@@ -848,7 +402,7 @@
               </div>
               <div>
                 <label class="label" for="enhancedTtsVoiceInput">Voice name</label>
-                <input id="enhancedTtsVoiceInput" placeholder="alloy, shimmer, narrator..." />
+                <input id="enhancedTtsVoiceInput" placeholder="alloy, narrator, shimmer..." />
               </div>
               <div>
                 <label class="label" for="enhancedTtsLanguageInput">Language</label>
@@ -860,24 +414,15 @@
               </div>
               <div>
                 <label class="label" for="enhancedTimerAfterVoiceSelect">Start timer after speech</label>
-                <select id="enhancedTimerAfterVoiceSelect">
-                  <option value="true">On</option>
-                  <option value="false">Off</option>
-                </select>
+                <select id="enhancedTimerAfterVoiceSelect"><option value="true">On</option><option value="false">Off</option></select>
               </div>
               <div>
                 <label class="label" for="enhancedAnnounceAnswersSelect">Read correct answer</label>
-                <select id="enhancedAnnounceAnswersSelect">
-                  <option value="true">On</option>
-                  <option value="false">Off</option>
-                </select>
+                <select id="enhancedAnnounceAnswersSelect"><option value="true">On</option><option value="false">Off</option></select>
               </div>
               <div>
                 <label class="label" for="enhancedAnnouncePlayersSelect">Read winners</label>
-                <select id="enhancedAnnouncePlayersSelect">
-                  <option value="true">On</option>
-                  <option value="false">Off</option>
-                </select>
+                <select id="enhancedAnnouncePlayersSelect"><option value="true">On</option><option value="false">Off</option></select>
               </div>
               <div style="grid-column: 1 / -1;">
                 <label class="label" for="enhancedTtsTargetsSelect">Speaker targets</label>
@@ -912,12 +457,30 @@
           doc.getElementById('enhancedToggleSectionsBtn').addEventListener('click', () => {
             const button = doc.getElementById('enhancedToggleSectionsBtn');
             const ids = ['hostSection-players', 'hostSection-access', 'hostSection-advanced'];
-            const detailsList = ids
-              .map((id) => doc.getElementById(id)?.querySelector('details'))
-              .filter(Boolean);
+            const detailsList = ids.map((id) => doc.getElementById(id)?.querySelector('details')).filter(Boolean);
             const anyOpen = detailsList.some((details) => details.open);
             detailsList.forEach((details) => { details.open = !anyOpen; });
             button.textContent = anyOpen ? 'Expand extras' : 'Collapse extras';
+          });
+
+          doc.getElementById('enhancedSaveVoiceBtn').addEventListener('click', async () => {
+            const button = doc.getElementById('enhancedSaveVoiceBtn');
+            const originalText = button.textContent;
+            try {
+              button.disabled = true;
+              button.textContent = 'Please wait…';
+              win.setNotice('hostExtraNotice', 'Saving voice settings…', '');
+              await saveVoiceSettings(win, doc);
+              if (typeof win.fetchState === 'function') await win.fetchState().catch(() => {});
+              win.setNotice('hostExtraNotice', 'Voice settings saved.', 'success');
+            } catch (err) {
+              win.setNotice('hostExtraNotice', err.message, 'warning');
+            } finally {
+              hostEditing = false;
+              hostEditUntil = 0;
+              button.disabled = false;
+              button.textContent = originalText;
+            }
           });
 
           doc.getElementById('enhancedImportTriviaPackBtn').addEventListener('click', async () => {
@@ -928,38 +491,25 @@
               button.disabled = true;
               button.textContent = 'Please wait…';
               notice.textContent = 'Importing trivia pack…';
-
               let payload = null;
               const fileInput = doc.getElementById('enhancedTriviaImportFile');
               const textArea = doc.getElementById('enhancedTriviaImportJson');
-
-              if (fileInput?.files?.length) {
-                payload = await readJsonFile(fileInput.files[0]);
-              } else {
+              if (fileInput?.files?.length) payload = await readJsonFile(fileInput.files[0]);
+              else {
                 const raw = String(textArea?.value || '').trim();
                 if (!raw) throw new Error('Choose a trivia JSON file or paste trivia JSON');
                 payload = JSON.parse(raw);
               }
-
-              await importTriviaPackFromPayload(win, doc, payload);
-
-              if (typeof win.fetchState === 'function') {
-                await win.fetchState().catch(() => {});
-              }
-
+              await importTriviaPackFromPayload(win, payload);
+              if (typeof win.fetchState === 'function') await win.fetchState().catch(() => {});
               await loadHostBootstrap(win);
-
               const importedSlug = String(payload.slug || payload.name || '').trim();
               if (importedSlug) {
                 const existing = JSON.parse(win.localStorage.getItem('ha_card_game_selected_categories') || '[]');
                 const merged = Array.from(new Set([importedSlug, ...existing].filter(Boolean)));
                 win.localStorage.setItem('ha_card_game_selected_categories', JSON.stringify(merged));
               }
-
-              if (win.latestState) {
-                enhanceUi(win, doc, win.latestState);
-              }
-
+              if (win.latestState) enhanceUi(win, doc, win.latestState);
               const importedCount = Array.isArray(payload.questions) ? payload.questions.length : 0;
               notice.textContent = `Imported trivia pack: ${payload.name || payload.slug} (${importedCount} questions)`;
               win.setNotice('hostExtraNotice', `Imported trivia pack: ${payload.name || payload.slug}`, 'success');
@@ -983,28 +533,6 @@
             if (notice) notice.textContent = '';
           });
 
-          doc.getElementById('enhancedSaveVoiceBtn').addEventListener('click', async () => {
-            const button = doc.getElementById('enhancedSaveVoiceBtn');
-            const originalText = button.textContent;
-            try {
-              button.disabled = true;
-              button.textContent = 'Please wait…';
-              win.setNotice('hostExtraNotice', 'Saving voice settings…', '');
-              await saveVoiceSettings(win, doc);
-              if (typeof win.fetchState === 'function') {
-                await win.fetchState().catch(() => {});
-              }
-              win.setNotice('hostExtraNotice', 'Voice settings saved.', 'success');
-            } catch (err) {
-              win.setNotice('hostExtraNotice', err.message, 'warning');
-            } finally {
-              hostEditing = false;
-              hostEditUntil = 0;
-              button.disabled = false;
-              button.textContent = originalText;
-            }
-          });
-
           doc.getElementById('enhancedPrepareTriviaBtn').addEventListener('click', async () => {
             const button = doc.getElementById('enhancedPrepareTriviaBtn');
             const originalText = button.textContent;
@@ -1016,11 +544,6 @@
               const categories = Array.from(categorySelect.selectedOptions || []).map((option) => option.value).filter(Boolean);
               const ageRange = doc.getElementById('enhancedTriviaAgeRangeSelect').value || '18_plus';
               const questionCount = parseInt(doc.getElementById('enhancedTriviaCountInput').value || '25', 10);
-              const answerSeconds = parseInt(doc.getElementById('enhancedAnswerSecondsInput').value || '15', 10);
-              const revealSeconds = parseInt(doc.getElementById('enhancedRevealSecondsInput').value || '5', 10);
-              const autoCycleEnabled = doc.getElementById('enhancedAutoCycleSelect').value === 'true';
-              const source = doc.getElementById('enhancedTriviaSourceSelect').value || 'offline_curated';
-
               await win.hostAction('set_game_mode', { game_mode: 'trivia' });
               await saveVoiceSettings(win, doc);
               await win.hostAction('set_trivia_settings', {
@@ -1028,20 +551,20 @@
                 buzzer_mode: doc.getElementById('enhancedTriviaBuzzerModeSelect').value === 'true',
                 buzz_bonus: parseInt(doc.getElementById('enhancedTriviaBuzzBonusInput').value || '1', 10),
                 steal_enabled: doc.getElementById('enhancedTriviaStealEnabledSelect').value === 'true',
-                answer_seconds: answerSeconds,
-                reveal_seconds: revealSeconds,
-                auto_cycle_enabled: autoCycleEnabled
+                answer_seconds: parseInt(doc.getElementById('enhancedAnswerSecondsInput').value || '15', 10),
+                reveal_seconds: parseInt(doc.getElementById('enhancedRevealSecondsInput').value || '5', 10),
+                auto_cycle_enabled: doc.getElementById('enhancedAutoCycleSelect').value === 'true',
               });
               await win.hostAction('prepare_trivia', {
                 categories,
                 category: categories[0] || 'fun_facts',
                 age_range: ageRange,
                 question_count: questionCount,
-                source
+                source: doc.getElementById('enhancedTriviaSourceSelect').value || 'offline_curated',
               });
-              if (typeof win.fetchState === 'function') {
-                await win.fetchState().catch(() => {});
-              }
+              if (typeof win.fetchState === 'function') await win.fetchState().catch(() => {});
+              await loadHostBootstrap(win);
+              if (win.latestState) enhanceUi(win, doc, win.latestState);
               win.setNotice('hostExtraNotice', `Prepared trivia from ${categories.length || 1} categor${categories.length === 1 ? 'y' : 'ies'}.`, 'success');
             } catch (err) {
               win.setNotice('hostExtraNotice', err.message, 'warning');
@@ -1065,7 +588,6 @@
               const ageRange = doc.getElementById('enhancedTriviaAgeRangeSelect').value || '18_plus';
               const questionCount = parseInt(doc.getElementById('enhancedTriviaCountInput').value || '25', 10);
               const aiTheme = (doc.getElementById('enhancedAiTriviaThemeInput').value || '').trim();
-
               await win.hostAction('set_game_mode', { game_mode: 'trivia' });
               await saveVoiceSettings(win, doc);
               await win.hostAction('set_trivia_settings', {
@@ -1075,18 +597,18 @@
                 steal_enabled: doc.getElementById('enhancedTriviaStealEnabledSelect').value === 'true',
                 answer_seconds: parseInt(doc.getElementById('enhancedAnswerSecondsInput').value || '15', 10),
                 reveal_seconds: parseInt(doc.getElementById('enhancedRevealSecondsInput').value || '5', 10),
-                auto_cycle_enabled: doc.getElementById('enhancedAutoCycleSelect').value === 'true'
+                auto_cycle_enabled: doc.getElementById('enhancedAutoCycleSelect').value === 'true',
               });
               await win.hostAction('prepare_trivia', {
                 categories,
                 category: categories[0] || aiTheme || 'fun_facts',
                 age_range: ageRange,
                 question_count: questionCount,
-                source: 'ai'
+                source: 'ai',
               });
-              if (typeof win.fetchState === 'function') {
-                await win.fetchState().catch(() => {});
-              }
+              if (typeof win.fetchState === 'function') await win.fetchState().catch(() => {});
+              await loadHostBootstrap(win);
+              if (win.latestState) enhanceUi(win, doc, win.latestState);
               win.setNotice('hostExtraNotice', 'AI trivia generated.', 'success');
             } catch (err) {
               win.setNotice('hostExtraNotice', err.message, 'warning');
@@ -1103,6 +625,7 @@
               await win.hostAction('set_game_mode', { game_mode: 'trivia' });
               await saveVoiceSettings(win, doc);
               await win.hostAction('start_trivia_round');
+              if (typeof win.fetchState === 'function') await win.fetchState().catch(() => {});
               win.setNotice('hostExtraNotice', 'Trivia round started.', 'success');
             } catch (err) {
               win.setNotice('hostExtraNotice', err.message, 'warning');
@@ -1113,9 +636,7 @@
             const button = doc.getElementById('enhancedPauseTriviaBtn');
             try {
               triviaPaused = !triviaPaused;
-              await win.hostAction('set_trivia_settings', {
-                auto_cycle_enabled: !triviaPaused
-              });
+              await win.hostAction('set_trivia_settings', { auto_cycle_enabled: !triviaPaused });
               button.classList.toggle('paused', triviaPaused);
               button.textContent = triviaPaused ? 'Resume auto next' : 'Pause auto next';
               win.setNotice('hostExtraNotice', triviaPaused ? 'Auto next paused.' : 'Auto next resumed.', 'success');
@@ -1140,9 +661,16 @@
         setValue(doc, 'enhancedGameModeSelect', mode);
 
         const trivia = state?.trivia || {};
-        const answerSeconds = trivia.answer_seconds || state?.round_timer_duration || 15;
-        const revealSeconds = trivia.reveal_seconds || 5;
-        const autoCycle = String(trivia.auto_cycle_enabled !== false);
+        setValue(doc, 'enhancedAnswerSecondsInput', trivia.answer_seconds || state?.round_timer_duration || 15);
+        setValue(doc, 'enhancedRevealSecondsInput', trivia.reveal_seconds || 5);
+        setValue(doc, 'enhancedAutoCycleSelect', String(trivia.auto_cycle_enabled !== false));
+        setValue(doc, 'enhancedTriviaSourceSelect', trivia.source || 'offline_curated');
+        setValue(doc, 'enhancedTriviaCountInput', 25);
+        setValue(doc, 'enhancedTriviaAgeRangeSelect', trivia.age_range || '18_plus');
+        setValue(doc, 'enhancedTriviaTeamModeSelect', String(Boolean(trivia.team_mode)));
+        setValue(doc, 'enhancedTriviaBuzzerModeSelect', String(Boolean(trivia.buzzer_mode)));
+        setValue(doc, 'enhancedTriviaBuzzBonusInput', trivia.buzz_bonus ?? 1);
+        setValue(doc, 'enhancedTriviaStealEnabledSelect', String(Boolean(trivia.steal_enabled)));
 
         const categorySelect = doc.getElementById('enhancedTriviaCategorySelect');
         if (categorySelect) {
@@ -1153,7 +681,6 @@
           const customPacks = [
             ...(state?.trivia?.custom_packs || []),
             ...((win.hostBootstrap?.host?.custom_trivia_packs) || []),
-            ...((win.hostBootstrap?.custom_trivia_packs) || [])
           ];
           categorySelect.innerHTML = options.map((item) => {
             const label = item.label || item.value;
@@ -1167,16 +694,22 @@
           };
         }
 
-        setValue(doc, 'enhancedAnswerSecondsInput', answerSeconds);
-        setValue(doc, 'enhancedRevealSecondsInput', revealSeconds);
-        setValue(doc, 'enhancedAutoCycleSelect', autoCycle);
-        setValue(doc, 'enhancedTriviaSourceSelect', trivia.source || 'offline_curated');
-        setValue(doc, 'enhancedTriviaCountInput', 25);
-        setValue(doc, 'enhancedTriviaAgeRangeSelect', trivia.age_range || '18_plus');
-        setValue(doc, 'enhancedTriviaTeamModeSelect', String(Boolean(trivia.team_mode)));
-        setValue(doc, 'enhancedTriviaBuzzerModeSelect', String(Boolean(trivia.buzzer_mode)));
-        setValue(doc, 'enhancedTriviaBuzzBonusInput', trivia.buzz_bonus ?? 1);
-        setValue(doc, 'enhancedTriviaStealEnabledSelect', String(Boolean(trivia.steal_enabled)));
+        const voice = win.hostBootstrap?.host?.trivia?.voice || trivia.voice || {};
+        const providerOptions = ((win.hostBootstrap?.host?.trivia?.tts_providers) || []).map((item) => ({
+          value: item.entity_id,
+          label: item.name || item.entity_id,
+        }));
+        fillSelectOptions(doc.getElementById('enhancedTtsProviderSelect'), providerOptions, 'value', 'label', true, 'Choose provider...');
+        setValue(doc, 'enhancedTtsEnabledSelect', String(Boolean(voice.enabled)));
+        setValue(doc, 'enhancedTtsProviderSelect', voice.provider_entity || '');
+        setValue(doc, 'enhancedTtsVoiceInput', voice.voice || '');
+        setValue(doc, 'enhancedTtsLanguageInput', voice.language || '');
+        setValue(doc, 'enhancedSpeechRateInput', voice.speech_rate_wpm ?? 155);
+        setValue(doc, 'enhancedTimerAfterVoiceSelect', String(voice.start_timer_after_voice !== false));
+        setValue(doc, 'enhancedAnnounceAnswersSelect', String(voice.announce_answers !== false));
+        setValue(doc, 'enhancedAnnouncePlayersSelect', String(voice.announce_correct_players !== false));
+        fillMultiSelectOptions(doc.getElementById('enhancedTtsTargetsSelect'), (win.hostBootstrap?.host?.trivia?.speaker_targets) || [], voice.speaker_targets || []);
+
         const pauseBtn = doc.getElementById('enhancedPauseTriviaBtn');
         if (pauseBtn) {
           const backendAutoCycle = trivia.auto_cycle_enabled !== false;
@@ -1187,12 +720,90 @@
         const toggleBtn = doc.getElementById('enhancedToggleSectionsBtn');
         if (toggleBtn) {
           const ids = ['hostSection-players', 'hostSection-access', 'hostSection-advanced'];
-          const detailsList = ids
-            .map((id) => doc.getElementById(id)?.querySelector('details'))
-            .filter(Boolean);
+          const detailsList = ids.map((id) => doc.getElementById(id)?.querySelector('details')).filter(Boolean);
           const anyOpen = detailsList.some((details) => details.open);
           toggleBtn.textContent = anyOpen ? 'Collapse extras' : 'Expand extras';
         }
+      }
+
+      function arrangeHostSections(doc, state) {
+        const hostControls = doc.getElementById('hostControls');
+        if (!hostControls) return;
+        const roundsBody = createSection(doc, hostControls, 'hostSection-rounds', 'Game mode & rounds', true);
+        const playersBody = createSection(doc, hostControls, 'hostSection-players', 'Players', true);
+        const accessBody = createSection(doc, hostControls, 'hostSection-access', 'Room & host access', false);
+        const advancedBody = createSection(doc, hostControls, 'hostSection-advanced', 'Trivia packs, AI, and imports', false);
+        const modePanel = doc.getElementById('hostModePanel');
+        const startActions = doc.getElementById('hostStartBtn')?.parentElement;
+        const playersHeading = Array.from(hostControls.querySelectorAll('h3')).find((node) => node.textContent.trim() === 'Players');
+        const playersList = doc.getElementById('playersList');
+        const hostAccessBlock = doc.getElementById('hostUsersSelect')?.closest('.reveal-settings');
+        const instanceManager = doc.getElementById('instanceManager');
+        const deckImportGrid = doc.getElementById('deckImportModeSelect')?.closest('.control-grid');
+        const deckImportActions = doc.getElementById('exportDecksBtn')?.closest('.actions');
+        const aiTools = doc.getElementById('aiToolsMount');
+        const manualEditor = doc.getElementById('manualEditorMount');
+        if (deckImportGrid) deckImportGrid.classList.add('cards-only');
+        if (deckImportActions) deckImportActions.classList.add('cards-only');
+        moveNodes(roundsBody, [modePanel, startActions]);
+        moveNodes(playersBody, [playersHeading, playersList]);
+        moveNodes(accessBody, [hostAccessBlock, instanceManager]);
+        moveNodes(advancedBody, [deckImportGrid, deckImportActions, aiTools, manualEditor]);
+        const mode = state?.game_mode || 'cards';
+        const triviaMode = mode === 'trivia';
+        hostControls.classList.toggle('trivia-mode', triviaMode);
+        hostControls.classList.toggle('cards-mode', mode === 'cards');
+        hostControls.classList.toggle('judge-party-mode', mode === 'judge_party');
+        const accessSection = doc.getElementById('hostSection-access');
+        if (accessSection) accessSection.dataset.hidden = triviaMode ? 'true' : 'false';
+        const advancedSection = doc.getElementById('hostSection-advanced');
+        if (advancedSection) advancedSection.dataset.hidden = 'false';
+        const playersSection = doc.getElementById('hostSection-players');
+        if (playersSection) playersSection.dataset.hidden = 'false';
+      }
+
+      function clearTriviaAutoAdvanceFallback() {
+        if (triviaAutoAdvanceTimer) {
+          clearTimeout(triviaAutoAdvanceTimer);
+          triviaAutoAdvanceTimer = null;
+        }
+        triviaAutoAdvanceKey = '';
+      }
+
+      function scheduleTriviaAutoAdvanceFallback(win) {
+        try {
+          const state = win?.latestState;
+          if (!state || state.game_mode !== 'trivia' || triviaPaused) {
+            clearTriviaAutoAdvanceFallback();
+            return;
+          }
+          const trivia = state.trivia || {};
+          const revealSeconds = Number(trivia.reveal_seconds || 0);
+          const autoCycleEnabled = trivia.auto_cycle_enabled !== false;
+          if (state.state !== 'results' || !autoCycleEnabled || revealSeconds <= 0) {
+            clearTriviaAutoAdvanceFallback();
+            return;
+          }
+          const key = [state.round_number || 0, state.state || '', state.winner || '', trivia.current_index ?? -1, revealSeconds].join('|');
+          if (triviaAutoAdvanceKey === key && triviaAutoAdvanceTimer) return;
+          clearTriviaAutoAdvanceFallback();
+          triviaAutoAdvanceKey = key;
+          triviaAutoAdvanceTimer = window.setTimeout(async () => {
+            try {
+              const current = win?.latestState;
+              const currentTrivia = current?.trivia || {};
+              const currentKey = [current?.round_number || 0, current?.state || '', current?.winner || '', currentTrivia.current_index ?? -1, Number(currentTrivia.reveal_seconds || 0)].join('|');
+              if (currentKey !== key) return;
+              if (typeof win?.hostAction === 'function') {
+                await win.hostAction('start_trivia_round');
+                if (typeof win?.fetchState === 'function') await win.fetchState().catch(() => {});
+              }
+            } catch (_err) {
+            } finally {
+              triviaAutoAdvanceTimer = null;
+            }
+          }, Math.max(750, revealSeconds * 1000 + 250));
+        } catch (_err) {}
       }
 
       function enhanceUi(win, doc, state) {
@@ -1201,46 +812,157 @@
         ensureTriviaQuestionPrompt(win, doc, state);
         enhanceHandCards(win, doc, state);
         ensureHostModePanel(win, doc, state);
-        arrangeHostSections(win, doc, state);
+        arrangeHostSections(doc, state);
+      }
+
+      function installStyles(doc) {
+        if (doc.getElementById('cardGamesWrapperStyles')) return;
+        const style = doc.createElement('style');
+        style.id = 'cardGamesWrapperStyles';
+        style.textContent = `
+          #triviaQuestionPrompt, #playerPromptCard { margin-bottom: 12px; padding: 16px 18px; border-radius: 18px; position: relative; overflow: hidden; isolation: isolate; }
+          #triviaQuestionPrompt { background: rgba(124,156,255,.10); border: 1px solid rgba(124,156,255,.24); }
+          #playerPromptCard { background: #111; color: #fff; border: 1px solid rgba(255,255,255,.18); box-shadow: 0 18px 36px rgba(0,0,0,.28); }
+          #playerPromptCard::before, #triviaQuestionPrompt::before, .enhanced-hand-card::before { content: 'CARD GAMES'; position: absolute; inset: auto 10px 8px auto; font-size: 20px; font-weight: 900; letter-spacing: .14em; opacity: .06; pointer-events: none; white-space: nowrap; transform: rotate(-18deg); z-index: -1; }
+          #playerPromptCard .prompt-label, #triviaQuestionPrompt .q-badge { flex: 0 0 auto; font-size: 28px; font-weight: 900; line-height: 1; }
+          #playerPromptCard .prompt-row, #triviaQuestionPrompt .q-row { display: flex; gap: 12px; align-items: flex-start; }
+          #playerPromptCard .prompt-body, #triviaQuestionPrompt .q-body { min-width: 0; flex: 1 1 auto; }
+          #playerPromptCard .prompt-text, #triviaQuestionPrompt .q-text { font-size: 19px; font-weight: 800; line-height: 1.36; }
+          #playerPromptCard .prompt-meta { margin-top: 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .1em; opacity: .7; font-weight: 800; }
+          #triviaQuestionPrompt .q-badge { color: #9bb6ff; }
+          #triviaQuestionPrompt .q-timer-row { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+          #triviaQuestionPrompt .q-timer-label { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; opacity: .7; }
+          #triviaQuestionPrompt .q-timer-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 70px; padding: 6px 10px; border-radius: 999px; font-weight: 800; background: rgba(124,156,255,.18); border: 1px solid rgba(124,156,255,.25); }
+          #triviaQuestionPrompt .q-timer-badge.warning { background: rgba(245,158,11,.18); border-color: rgba(245,158,11,.35); color: #ffd089; }
+          #triviaQuestionPrompt .q-timer-badge.danger { background: rgba(239,68,68,.18); border-color: rgba(239,68,68,.35); color: #ffb0b0; }
+          #triviaQuestionPrompt .q-timer-note { font-size: 12px; opacity: .72; }
+          #handList.enhanced-card-hand { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; align-items: stretch; }
+          .enhanced-hand-card { position: relative; display: flex; min-height: 220px; padding: 16px; border-radius: 18px; background: #fff; color: #111; border: 1px solid rgba(0,0,0,.12); box-shadow: 0 12px 28px rgba(0,0,0,.18); overflow: hidden; }
+          .enhanced-hand-card.selected { border-color: rgba(67,97,238,.65); box-shadow: 0 0 0 3px rgba(67,97,238,.12), 0 18px 34px rgba(0,0,0,.22); }
+          .enhanced-hand-card .card-index { position: absolute; top: 12px; right: 12px; width: 26px; height: 26px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; background: rgba(17,17,17,.08); }
+          .enhanced-hand-card .card-text { margin-top: auto; white-space: normal; font-size: 20px; line-height: 1.28; font-weight: 700; }
+          .enhanced-hand-card .card-brand { position: absolute; left: 14px; top: 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .12em; opacity: .72; font-weight: 800; }
+          #hostModePanel.card { margin-bottom: 16px; border: 1px solid rgba(124,156,255,.24); background: rgba(124,156,255,.08); }
+          #hostModePanel .control-grid, #hostModePanel .subgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+          #hostModePanel .subgrid { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.08); }
+          .host-section details { border: 1px solid rgba(255,255,255,.08); border-radius: 14px; background: rgba(10,16,32,.45); margin-top: 12px; overflow: hidden; }
+          .host-section summary { cursor: pointer; list-style: none; padding: 14px 16px; font-weight: 700; display: flex; justify-content: space-between; align-items: center; }
+          .host-section summary::-webkit-details-marker { display: none; }
+          .host-section .section-body { padding: 0 16px 16px; }
+          .host-section[data-hidden="true"] { display: none !important; }
+          #hostModePanel[data-mode="trivia"] .cards-only { display: none !important; }
+          #hostModePanel[data-mode="cards"] .trivia-only, #hostModePanel[data-mode="judge_party"] .trivia-only { display: none !important; }
+          #hostControls.trivia-mode #hostSection-access, #hostControls.trivia-mode #hostSection-advanced .cards-only, #hostControls.cards-mode #hostSection-rounds .trivia-only, #hostControls.cards-mode #hostSection-advanced .trivia-only, #hostControls.judge-party-mode #hostSection-rounds .trivia-only, #hostControls.judge-party-mode #hostSection-advanced .trivia-only { display: none !important; }
+          #hostControls .legacy-trivia-control, #hostControls .legacy-trivia-control + div, #hostControls .legacy-trivia-control + select, #hostControls .legacy-trivia-control + input, #hostControls .legacy-trivia-control + label, #hostControls.trivia-mode #deckSelect, #hostControls.trivia-mode #deckDescription, #hostControls.trivia-mode #selectedDeckMode, #hostControls.trivia-mode .timer-block, #hostControls.trivia-mode .reveal-settings { display: none !important; }
+          #enhancedTriviaCategorySelect { min-height: 140px; }
+          #enhancedTtsTargetsSelect { min-height: 110px; }
+          #enhancedTriviaImportJson { width: 100%; min-height: 190px; border-radius: 12px; }
+          #enhancedTriviaImportNotice { min-height: 18px; }
+          #enhancedPauseTriviaBtn.paused { background: rgba(245,158,11,.18); border-color: rgba(245,158,11,.35); }
+          .pill-note, #enhancedTtsNotice { font-size: 12px; opacity: .75; margin-top: 6px; }
+        `;
+        doc.head.appendChild(style);
+      }
+
+      function tryEnhanceLegacy() {
+        const win = frame.contentWindow;
+        const doc = frame.contentDocument;
+        if (!win || !doc || !doc.body) return false;
+        wireHostEditingGuards(doc);
+        installStyles(doc);
+
+        if (win.__cardGamesWrapperEnhancementsApplied) {
+          if (win.latestState) {
+            try { enhanceUi(win, doc, win.latestState); scheduleTriviaAutoAdvanceFallback(win); } catch (_err) {}
+          }
+          return true;
+        }
+
+        if (typeof win.render !== 'function' || typeof win.hostAction !== 'function') return false;
+        win.__cardGamesWrapperEnhancementsApplied = true;
+
+        const originalRender = win.render.bind(win);
+        win.render = function(state) {
+          const result = originalRender(state);
+          window.setTimeout(() => {
+            try {
+              enhanceUi(win, doc, state);
+              scheduleTriviaAutoAdvanceFallback(win);
+            } catch (err) {
+              console.error(err);
+            }
+          }, 0);
+          return result;
+        };
+
+        const originalBootstrapHost = typeof win.bootstrapHost === 'function' ? win.bootstrapHost.bind(win) : null;
+        if (originalBootstrapHost) {
+          win.bootstrapHost = async function(...args) {
+            const result = await originalBootstrapHost(...args);
+            window.setTimeout(async () => {
+              try {
+                await loadHostBootstrap(win);
+                enhanceUi(win, doc, win.latestState || null);
+                scheduleTriviaAutoAdvanceFallback(win);
+              } catch (err) {
+                console.error(err);
+              }
+            }, 0);
+            return result;
+          };
+        }
+
+        if (win.latestState) {
+          try {
+            enhanceUi(win, doc, win.latestState);
+            scheduleTriviaAutoAdvanceFallback(win);
+          } catch (_err) {}
+        }
+        return true;
+      }
+
+      function startSyncLoops() {
+        if (timerLoop) clearInterval(timerLoop);
+        timerLoop = setInterval(() => {
+          try {
+            const win = frame.contentWindow;
+            const doc = frame.contentDocument;
+            if (win?.latestState && doc) {
+              renderQuestionTimer(win, doc, win.latestState);
+              enhanceHandCards(win, doc, win.latestState);
+            }
+          } catch (_err) {}
+        }, 250);
+
+        if (syncLoop) clearInterval(syncLoop);
+        syncLoop = setInterval(() => {
+          try {
+            const win = frame.contentWindow;
+            const doc = frame.contentDocument;
+            if (shouldSkipSync(doc)) return;
+            if (typeof win?.fetchState === 'function') win.fetchState().catch(() => {});
+          } catch (_err) {}
+        }, 1000);
       }
 
       frame.addEventListener('load', () => {
         let attempts = 0;
-        const timer = setInterval(() => {
+        const bootTimer = setInterval(() => {
           attempts += 1;
-          if (tryEnhanceLegacy() || attempts > 80) clearInterval(timer);
+          if (tryEnhanceLegacy() || attempts > 80) clearInterval(bootTimer);
         }, 250);
 
-        let timerLoop = null;
-        let syncLoop = null;
-        const startTimerLoop = () => {
-          if (timerLoop) clearInterval(timerLoop);
-          timerLoop = setInterval(() => {
-            try {
-              const win = frame.contentWindow;
-              const doc = frame.contentDocument;
-              if (win?.latestState && doc) {
-                renderQuestionTimer(win, doc, win.latestState);
-                enhanceHandCards(win, doc, win.latestState);
-              }
-            } catch (_err) {}
-          }, 250);
-        };
-        const startSyncLoop = () => {
-          if (syncLoop) clearInterval(syncLoop);
-          syncLoop = setInterval(() => {
-            try {
-              const win = frame.contentWindow;
-              const doc = frame.contentDocument;
-              if (shouldSkipSync(doc)) return;
-              if (typeof win?.fetchState === 'function') {
-                win.fetchState().catch(() => {});
-              }
-            } catch (_err) {}
-          }, 1000);
-        };
-        startTimerLoop();
-        startSyncLoop();
+        startSyncLoops();
+
+        window.setTimeout(async () => {
+          try {
+            const win = frame.contentWindow;
+            const doc = frame.contentDocument;
+            if (!win || !doc) return;
+            await loadHostBootstrap(win);
+            if (win.latestState) enhanceUi(win, doc, win.latestState);
+          } catch (_err) {}
+        }, 900);
       });
     </script>
   </body>
