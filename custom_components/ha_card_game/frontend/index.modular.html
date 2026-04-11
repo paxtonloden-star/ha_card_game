@@ -370,6 +370,14 @@
           #hostModePanel .pill-note { font-size: 12px; opacity: .75; }
           #enhancedTtsTargetsSelect { min-height: 110px; }
           #enhancedTtsNotice { font-size: 12px; opacity: .75; margin-top: 6px; }
+          #enhancedTriviaImportJson {
+            width: 100%;
+            min-height: 190px;
+            border-radius: 12px;
+          }
+          #enhancedTriviaImportNotice {
+            min-height: 18px;
+          }
         `;
         doc.head.appendChild(style);
 
@@ -558,7 +566,7 @@
         const roundsBody = createSection(doc, hostControls, 'hostSection-rounds', 'Game mode & rounds', true);
         const playersBody = createSection(doc, hostControls, 'hostSection-players', 'Players', true);
         const accessBody = createSection(doc, hostControls, 'hostSection-access', 'Room & host access', false);
-        const advancedBody = createSection(doc, hostControls, 'hostSection-advanced', 'AI, import, and custom content', false);
+        const advancedBody = createSection(doc, hostControls, 'hostSection-advanced', 'Trivia packs, AI, and imports', false);
 
         const modePanel = doc.getElementById('hostModePanel');
         const startActions = doc.getElementById('hostStartBtn')?.parentElement;
@@ -642,6 +650,32 @@
         });
       }
 
+
+      async function importTriviaPackFromPayload(win, doc, payload) {
+        if (!payload || typeof payload !== 'object') {
+          throw new Error('Trivia import payload must be a JSON object');
+        }
+        const slug = String(payload.slug || payload.name || '').trim();
+        const name = String(payload.name || payload.slug || '').trim();
+        const description = String(payload.description || '').trim();
+        const questions = Array.isArray(payload.questions) ? payload.questions : [];
+
+        if (!name) throw new Error('Trivia pack name is required');
+        if (!questions.length) throw new Error('Trivia pack must contain at least one question');
+
+        await win.hostAction('import_trivia_pack', {
+          slug,
+          name,
+          description,
+          questions,
+        });
+      }
+
+      async function readJsonFile(file) {
+        const raw = await file.text();
+        return JSON.parse(raw);
+      }
+
       function ensureHostModePanel(win, doc, state) {
         const hostControls = doc.getElementById('hostControls');
         if (!hostControls) return;
@@ -715,6 +749,28 @@
               <div>
                 <label class="label" for="enhancedTriviaSourceSelect">Source</label>
                 <select id="enhancedTriviaSourceSelect"><option value="offline_curated">Offline curated</option><option value="ai">AI</option></select>
+              </div>
+            </div>
+
+            <div class="subgrid trivia-only">
+              <div style="grid-column: 1 / -1;">
+                <h4 style="margin:0 0 8px 0;">Trivia pack import</h4>
+                <div class="pill-note">Import a trivia JSON pack here. This is separate from card deck import and game instance tools.</div>
+              </div>
+              <div>
+                <label class="label" for="enhancedTriviaImportFile">Upload trivia JSON</label>
+                <input id="enhancedTriviaImportFile" type="file" accept="application/json,.json" />
+              </div>
+              <div style="grid-column: 1 / -1;">
+                <label class="label" for="enhancedTriviaImportJson">Or paste trivia JSON</label>
+                <textarea id="enhancedTriviaImportJson" rows="10" placeholder='{"slug":"my_pack","name":"My Pack","questions":[...]}'></textarea>
+              </div>
+              <div class="actions wrap" style="grid-column: 1 / -1;">
+                <button class="secondary" id="enhancedImportTriviaPackBtn">Import trivia pack</button>
+                <button class="secondary" id="enhancedClearTriviaImportBtn">Clear import box</button>
+              </div>
+              <div style="grid-column: 1 / -1;">
+                <div id="enhancedTriviaImportNotice" class="pill-note"></div>
               </div>
             </div>
 
@@ -828,6 +884,55 @@
             const anyOpen = detailsList.some((details) => details.open);
             detailsList.forEach((details) => { details.open = !anyOpen; });
             button.textContent = anyOpen ? 'Expand extras' : 'Collapse extras';
+          });
+
+          doc.getElementById('enhancedImportTriviaPackBtn').addEventListener('click', async () => {
+            const button = doc.getElementById('enhancedImportTriviaPackBtn');
+            const notice = doc.getElementById('enhancedTriviaImportNotice');
+            const originalText = button.textContent;
+            try {
+              button.disabled = true;
+              button.textContent = 'Please wait…';
+              notice.textContent = 'Importing trivia pack…';
+
+              let payload = null;
+              const fileInput = doc.getElementById('enhancedTriviaImportFile');
+              const textArea = doc.getElementById('enhancedTriviaImportJson');
+
+              if (fileInput?.files?.length) {
+                payload = await readJsonFile(fileInput.files[0]);
+              } else {
+                const raw = String(textArea?.value || '').trim();
+                if (!raw) throw new Error('Choose a trivia JSON file or paste trivia JSON');
+                payload = JSON.parse(raw);
+              }
+
+              await importTriviaPackFromPayload(win, doc, payload);
+              if (typeof win.fetchState === 'function') {
+                await win.fetchState().catch(() => {});
+              }
+
+              const importedCount = Array.isArray(payload.questions) ? payload.questions.length : 0;
+              notice.textContent = `Imported trivia pack: ${payload.name || payload.slug} (${importedCount} questions)`;
+              win.setNotice('hostExtraNotice', `Imported trivia pack: ${payload.name || payload.slug}`, 'success');
+            } catch (err) {
+              notice.textContent = err.message || String(err);
+              win.setNotice('hostExtraNotice', err.message || String(err), 'warning');
+            } finally {
+              hostEditing = false;
+              hostEditUntil = 0;
+              button.disabled = false;
+              button.textContent = originalText;
+            }
+          });
+
+          doc.getElementById('enhancedClearTriviaImportBtn').addEventListener('click', () => {
+            const fileInput = doc.getElementById('enhancedTriviaImportFile');
+            const textArea = doc.getElementById('enhancedTriviaImportJson');
+            const notice = doc.getElementById('enhancedTriviaImportNotice');
+            if (fileInput) fileInput.value = '';
+            if (textArea) textArea.value = '';
+            if (notice) notice.textContent = '';
           });
 
           doc.getElementById('enhancedSaveVoiceBtn').addEventListener('click', async () => {
