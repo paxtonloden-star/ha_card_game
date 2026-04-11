@@ -134,11 +134,42 @@
         }
       }
 
+
+      function installBootstrapCapture() {
+        const win = frame.contentWindow;
+        if (!win || win.__cardGamesBootstrapCaptureInstalled) return;
+        win.__cardGamesBootstrapCaptureInstalled = true;
+
+        const originalFetch = win.fetch ? win.fetch.bind(win) : null;
+        if (!originalFetch) return;
+
+        win.fetch = async (...args) => {
+          const response = await originalFetch(...args);
+          try {
+            const url = String(args[0] && (args[0].url || args[0]) || '');
+            if (url.includes('/api/ha_card_game/host/bootstrap')) {
+              const clone = response.clone();
+              clone.json().then((data) => {
+                win.hostBootstrap = data;
+                try {
+                  const doc = frame.contentDocument;
+                  if (doc && win.latestState) {
+                    enhanceUi(win, doc, win.latestState);
+                  }
+                } catch (_err) {}
+              }).catch(() => {});
+            }
+          } catch (_err) {}
+          return response;
+        };
+      }
+
       function tryEnhanceLegacy() {
         const win = frame.contentWindow;
         const doc = frame.contentDocument;
         if (!win || !doc || !doc.body) return false;
         wireHostEditingGuards(doc);
+        installBootstrapCapture();
 
         if (win.__cardGamesWrapperEnhancementsApplied) {
           if (win.latestState) {
@@ -405,18 +436,36 @@
 
       function getTriviaCategoryOptions(win, doc) {
         const map = new Map();
+
         const select = doc.getElementById('triviaCategorySelect');
         if (select) {
           Array.from(select.options || []).forEach((option) => {
             const value = String(option.value || '').trim();
-            if (value) map.set(value, option.textContent || value);
+            if (value) {
+              map.set(value, option.textContent || value);
+            }
           });
         }
-        const customPacks = win.latestState?.trivia?.custom_packs || [];
-        customPacks.forEach((pack) => {
+
+        const stateCustomPacks = win.latestState?.trivia?.custom_packs || [];
+        stateCustomPacks.forEach((pack) => {
           const value = String(pack.slug || '').trim();
-          if (value) map.set(value, pack.name || value);
+          if (value) {
+            map.set(value, pack.name || value);
+          }
         });
+
+        const bootstrapCustomPacks =
+          win.hostBootstrap?.host?.custom_trivia_packs ||
+          win.hostBootstrap?.custom_trivia_packs ||
+          [];
+        bootstrapCustomPacks.forEach((pack) => {
+          const value = String(pack.slug || '').trim();
+          if (value) {
+            map.set(value, pack.name || value);
+          }
+        });
+
         return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
       }
 
@@ -1108,9 +1157,14 @@
           const remembered = JSON.parse(win.localStorage.getItem('ha_card_game_selected_categories') || '[]');
           const fallbackSelected = [trivia.category].filter(Boolean);
           const selectedSet = new Set((remembered.length ? remembered : fallbackSelected).filter(Boolean));
+          const customPacks = [
+            ...(state?.trivia?.custom_packs || []),
+            ...((win.hostBootstrap?.host?.custom_trivia_packs) || []),
+            ...((win.hostBootstrap?.custom_trivia_packs) || [])
+          ];
           categorySelect.innerHTML = options.map((item) => {
             const label = item.label || item.value;
-            const isCustom = (state?.trivia?.custom_packs || []).some((pack) => pack.slug === item.value);
+            const isCustom = customPacks.some((pack) => pack.slug === item.value);
             const shownLabel = isCustom ? `${label} (custom)` : label;
             return `<option value="${item.value}" ${selectedSet.has(item.value) ? 'selected' : ''}>${shownLabel}</option>`;
           }).join('');
