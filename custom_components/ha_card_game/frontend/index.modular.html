@@ -397,21 +397,28 @@
         const canAnswer = !buzzerMode || buzzOwner === state.player_name;
 
         if (triviaMode) {
-          hand.innerHTML = choices.map((choice, idx) => `
-            <button class="hand-card" ${canAnswer ? '' : 'disabled'} data-choice="${escapeAttr(choice)}">
-              <div><strong>${String.fromCharCode(65 + idx)}.</strong></div>
-              <div style="margin-top:auto">${escapeHtml(choice)}</div>
-            </button>
-          `).join('') || '<div class="muted">Waiting for question choices.</div>';
-          hand.querySelectorAll('[data-choice]').forEach((button) => {
-            button.addEventListener('click', async () => {
-              if (!canAnswer) return;
-              el('cardText').value = button.dataset.choice;
-              await submitCard();
+          if (choices.length) {
+            hand.innerHTML = choices.map((choice, idx) => `
+              <button class="hand-card" ${canAnswer ? '' : 'disabled'} data-choice="${escapeAttr(choice)}">
+                <div><strong>${String.fromCharCode(65 + idx)}.</strong></div>
+                <div style="margin-top:auto">${escapeHtml(choice)}</div>
+              </button>
+            `).join('');
+            hand.querySelectorAll('[data-choice]').forEach((button) => {
+              button.addEventListener('click', async () => {
+                if (!canAnswer) return;
+                el('cardText').value = button.dataset.choice;
+                await submitCard();
+              });
             });
-          });
-          show(el('cardText'), false);
-          show(el('manualAnswerLabel'), false);
+            show(el('cardText'), false);
+            show(el('manualAnswerLabel'), false);
+          } else {
+            hand.innerHTML = '<div class="muted">Type your trivia answer below.</div>';
+            show(el('cardText'), true);
+            show(el('manualAnswerLabel'), true);
+            el('manualAnswerLabel').textContent = 'Your trivia answer';
+          }
         } else {
           hand.innerHTML = cards.map((card, idx) => `
             <button class="hand-card" data-card="${escapeAttr(card)}">
@@ -1037,10 +1044,21 @@
           localStorage.setItem('ha_card_game_selected_categories', JSON.stringify(selected));
         };
 
+        const rememberedAge = localStorage.getItem('ha_card_game_age_range') || '';
+        const rememberedSource = localStorage.getItem('ha_card_game_source') || '';
+        if (!el('enhancedTriviaAgeRangeSelect').dataset.bound) {
+          el('enhancedTriviaAgeRangeSelect').dataset.bound = 'true';
+          el('enhancedTriviaAgeRangeSelect').addEventListener('change', () => localStorage.setItem('ha_card_game_age_range', el('enhancedTriviaAgeRangeSelect').value));
+        }
+        if (!el('enhancedTriviaSourceSelect').dataset.bound) {
+          el('enhancedTriviaSourceSelect').dataset.bound = 'true';
+          el('enhancedTriviaSourceSelect').addEventListener('change', () => localStorage.setItem('ha_card_game_source', el('enhancedTriviaSourceSelect').value));
+        }
+
         if (!skipHydration) {
           if (!el('enhancedTriviaCountInput').value) el('enhancedTriviaCountInput').value = '25';
-          el('enhancedTriviaAgeRangeSelect').value = state?.trivia?.age_range || '18_plus';
-          el('enhancedTriviaSourceSelect').value = state?.trivia?.source || 'offline_curated';
+          el('enhancedTriviaAgeRangeSelect').value = rememberedAge || state?.trivia?.age_range || '18_plus';
+          el('enhancedTriviaSourceSelect').value = rememberedSource || state?.trivia?.source || 'offline_curated';
           el('enhancedTriviaTeamModeSelect').value = String(Boolean(state?.trivia?.team_mode));
           el('enhancedTriviaBuzzerModeSelect').value = String(Boolean(state?.trivia?.buzzer_mode));
           el('enhancedTriviaBuzzBonusInput').value = state?.trivia?.buzz_bonus ?? 1;
