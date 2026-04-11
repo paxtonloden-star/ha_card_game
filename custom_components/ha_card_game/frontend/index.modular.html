@@ -135,33 +135,19 @@
       }
 
 
-      function installBootstrapCapture() {
-        const win = frame.contentWindow;
-        if (!win || win.__cardGamesBootstrapCaptureInstalled) return;
-        win.__cardGamesBootstrapCaptureInstalled = true;
-
-        const originalFetch = win.fetch ? win.fetch.bind(win) : null;
-        if (!originalFetch) return;
-
-        win.fetch = async (...args) => {
-          const response = await originalFetch(...args);
-          try {
-            const url = String(args[0] && (args[0].url || args[0]) || '');
-            if (url.includes('/api/ha_card_game/host/bootstrap')) {
-              const clone = response.clone();
-              clone.json().then((data) => {
-                win.hostBootstrap = data;
-                try {
-                  const doc = frame.contentDocument;
-                  if (doc && win.latestState) {
-                    enhanceUi(win, doc, win.latestState);
-                  }
-                } catch (_err) {}
-              }).catch(() => {});
-            }
-          } catch (_err) {}
-          return response;
-        };
+      async function loadHostBootstrap(win) {
+        try {
+          const response = await fetch('/api/ha_card_game/host/bootstrap', {
+            credentials: 'same-origin',
+            cache: 'no-store',
+          });
+          if (!response.ok) return null;
+          const data = await response.json();
+          win.hostBootstrap = data;
+          return data;
+        } catch (_err) {
+          return null;
+        }
       }
 
       function tryEnhanceLegacy() {
@@ -169,7 +155,6 @@
         const doc = frame.contentDocument;
         if (!win || !doc || !doc.body) return false;
         wireHostEditingGuards(doc);
-        installBootstrapCapture();
 
         if (win.__cardGamesWrapperEnhancementsApplied) {
           if (win.latestState) {
@@ -957,17 +942,25 @@
               }
 
               await importTriviaPackFromPayload(win, doc, payload);
+
               if (typeof win.fetchState === 'function') {
                 await win.fetchState().catch(() => {});
               }
 
-              const importedCount = Array.isArray(payload.questions) ? payload.questions.length : 0;
+              await loadHostBootstrap(win);
+
               const importedSlug = String(payload.slug || payload.name || '').trim();
               if (importedSlug) {
                 const existing = JSON.parse(win.localStorage.getItem('ha_card_game_selected_categories') || '[]');
                 const merged = Array.from(new Set([importedSlug, ...existing].filter(Boolean)));
                 win.localStorage.setItem('ha_card_game_selected_categories', JSON.stringify(merged));
               }
+
+              if (win.latestState) {
+                enhanceUi(win, doc, win.latestState);
+              }
+
+              const importedCount = Array.isArray(payload.questions) ? payload.questions.length : 0;
               notice.textContent = `Imported trivia pack: ${payload.name || payload.slug} (${importedCount} questions)`;
               win.setNotice('hostExtraNotice', `Imported trivia pack: ${payload.name || payload.slug}`, 'success');
             } catch (err) {
