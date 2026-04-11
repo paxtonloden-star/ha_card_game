@@ -183,6 +183,26 @@
       let countdownTimer = null;
       let hostEditing = false;
       let hostEditUntil = 0;
+      const hostPrefsKey = 'ha_card_game_host_prefs_v1';
+
+      function getHostPrefs() {
+        try {
+          return JSON.parse(localStorage.getItem(hostPrefsKey) || '{}') || {};
+        } catch (_err) {
+          return {};
+        }
+      }
+
+      function setHostPrefs(updates) {
+        const current = getHostPrefs();
+        const merged = { ...current, ...updates };
+        localStorage.setItem(hostPrefsKey, JSON.stringify(merged));
+        return merged;
+      }
+
+      function selectedValues(node) {
+        return Array.from(node?.selectedOptions || []).map((option) => option.value).filter(Boolean);
+      }
 
       const el = (id) => document.getElementById(id);
       const show = (node, visible) => node.classList.toggle('hidden', !visible);
@@ -474,6 +494,34 @@
         }
       }
 
+      function scheduleStandaloneTriviaAutoAdvance(state) {
+        if (window.__triviaAdvanceTimer) {
+          clearTimeout(window.__triviaAdvanceTimer);
+          window.__triviaAdvanceTimer = null;
+        }
+        if (!hostEnabled) return;
+        if (state?.game_mode !== 'trivia' || state?.state !== 'results') return;
+        const prefs = getHostPrefs();
+        const enabled = String(prefs.auto_cycle_enabled || '').toLowerCase() !== 'false'
+          && state?.trivia?.auto_cycle_enabled !== false;
+        const revealSeconds = Number(prefs.reveal_seconds || state?.trivia?.reveal_seconds || 5);
+        if (!enabled || revealSeconds <= 0) return;
+        const key = `${state.round_number}|${state.trivia?.current_index ?? -1}|${state.winner || ''}`;
+        if (window.__triviaAdvanceKey === key) return;
+        window.__triviaAdvanceKey = key;
+        window.__triviaAdvanceTimer = setTimeout(async () => {
+          try {
+            if (latestState?.game_mode === 'trivia' && latestState?.state === 'results') {
+              await hostAction('start_trivia_round');
+              await fetchState();
+            }
+          } catch (_err) {
+          } finally {
+            window.__triviaAdvanceTimer = null;
+          }
+        }, Math.max(750, revealSeconds * 1000 + 250));
+      }
+
       function updateTimerDisplay(state) {
         const badge = el('triviaTimerBadge');
         const note = el('triviaTimerNote');
@@ -555,6 +603,56 @@
         renderQuestionArea(state);
         renderHandOrChoices(state);
         if (joined && (isJudge || (triviaMode && state.state === 'results'))) renderJudgeSubmissions(state);
+      }
+
+      function attachHostPreferenceListeners() {
+        if (document.body.dataset.hostPrefListeners === 'true') return;
+        document.body.dataset.hostPrefListeners = 'true';
+
+        const mapValue = (id, key) => {
+          const node = el(id);
+          if (!node) return;
+          node.addEventListener('change', () => setHostPrefs({ [key]: node.value }));
+          node.addEventListener('input', () => setHostPrefs({ [key]: node.value }));
+        };
+
+        mapValue('enhancedGameModeSelect', 'game_mode');
+        mapValue('enhancedTriviaCountInput', 'question_count');
+        mapValue('enhancedTriviaAgeRangeSelect', 'age_range');
+        mapValue('enhancedTriviaSourceSelect', 'source');
+        mapValue('enhancedTriviaTeamModeSelect', 'team_mode');
+        mapValue('enhancedTriviaBuzzerModeSelect', 'buzzer_mode');
+        mapValue('enhancedTriviaBuzzBonusInput', 'buzz_bonus');
+        mapValue('enhancedTriviaStealEnabledSelect', 'steal_enabled');
+        mapValue('enhancedAnswerSecondsInput', 'answer_seconds');
+        mapValue('enhancedRevealSecondsInput', 'reveal_seconds');
+        mapValue('enhancedAutoCycleSelect', 'auto_cycle_enabled');
+        mapValue('deckSelect', 'deck_name');
+        mapValue('aiThemeInput', 'ai_theme');
+        mapValue('aiAgeRangeSelect', 'ai_age_range');
+        mapValue('aiPromptCountInput', 'ai_prompt_count');
+        mapValue('aiWhiteCountInput', 'ai_white_count');
+
+        const catNode = el('enhancedTriviaCategorySelect');
+        if (catNode) {
+          catNode.addEventListener('change', () => setHostPrefs({ categories: selectedValues(catNode) }));
+        }
+
+        const speakerNode = el('enhancedTtsTargetsSelect');
+        if (speakerNode) {
+          speakerNode.addEventListener('change', () => setHostPrefs({ speaker_targets: selectedValues(speakerNode) }));
+        }
+
+        [
+          ['enhancedTtsEnabledSelect', 'voice_enabled'],
+          ['enhancedTtsProviderSelect', 'provider_entity'],
+          ['enhancedTtsVoiceInput', 'voice'],
+          ['enhancedTtsLanguageInput', 'language'],
+          ['enhancedSpeechRateInput', 'speech_rate_wpm'],
+          ['enhancedTimerAfterVoiceSelect', 'start_timer_after_voice'],
+          ['enhancedAnnounceAnswersSelect', 'announce_answers'],
+          ['enhancedAnnouncePlayersSelect', 'announce_correct_players'],
+        ].forEach(([id, key]) => mapValue(id, key));
       }
 
       function ensureHostControls() {
@@ -730,14 +828,34 @@
         `;
 
         bindHostButtons();
+        attachHostPreferenceListeners();
       }
 
       function bindHostButtons() {
         el('enhancedApplyModeBtn').addEventListener('click', async () => {
           try {
             const mode = el('enhancedGameModeSelect').value;
+            const prefs = setHostPrefs({
+              game_mode: mode,
+              categories: selectedValues(el('enhancedTriviaCategorySelect')),
+              question_count: el('enhancedTriviaCountInput')?.value || '25',
+              age_range: el('enhancedTriviaAgeRangeSelect')?.value || '18_plus',
+              source: el('enhancedTriviaSourceSelect')?.value || 'offline_curated',
+              team_mode: el('enhancedTriviaTeamModeSelect')?.value || 'false',
+              buzzer_mode: el('enhancedTriviaBuzzerModeSelect')?.value || 'false',
+              buzz_bonus: el('enhancedTriviaBuzzBonusInput')?.value || '1',
+              steal_enabled: el('enhancedTriviaStealEnabledSelect')?.value || 'false',
+              answer_seconds: el('enhancedAnswerSecondsInput')?.value || '15',
+              reveal_seconds: el('enhancedRevealSecondsInput')?.value || '5',
+              auto_cycle_enabled: el('enhancedAutoCycleSelect')?.value || 'true',
+              deck_name: el('deckSelect')?.value || '',
+            });
             await hostAction('set_game_mode', { game_mode: mode });
-            setNotice('hostNotice', 'Game mode updated.', 'success');
+            if (mode !== 'trivia' && prefs.deck_name) {
+              await hostAction('set_deck', { deck_name: prefs.deck_name });
+            }
+            hostEditing = false; hostEditUntil = 0;
+            setNotice('hostNotice', 'Game mode and current selections saved.', 'success');
           } catch (err) { setNotice('hostNotice', err.message, 'warning'); }
         });
 
@@ -759,8 +877,15 @@
           catch (err) { setNotice('hostNotice', err.message, 'warning'); }
         });
         el('hostNextBtn').addEventListener('click', async () => {
-          try { await hostAction('next_round'); setNotice('hostNotice', 'Advanced to the next round.', 'success'); }
-          catch (err) { setNotice('hostNotice', err.message, 'warning'); }
+          try {
+            if (latestState?.game_mode === 'trivia') {
+              await hostAction('start_trivia_round');
+              setNotice('hostNotice', 'Advanced to the next trivia question.', 'success');
+            } else {
+              await hostAction('next_round');
+              setNotice('hostNotice', 'Advanced to the next round.', 'success');
+            }
+          } catch (err) { setNotice('hostNotice', err.message, 'warning'); }
         });
         el('hostResetBtn').addEventListener('click', async () => {
           try { await hostAction('reset_game'); localStorage.removeItem(storageKey); session = null; setNotice('hostNotice', 'Lobby reset and new join code issued.', 'success'); }
@@ -819,13 +944,28 @@
               reveal_seconds: parseInt(el('enhancedRevealSecondsInput').value || '5', 10),
               auto_cycle_enabled: el('enhancedAutoCycleSelect').value === 'true',
             });
+            const prefs = setHostPrefs({
+              game_mode: 'trivia',
+              categories,
+              age_range: el('enhancedTriviaAgeRangeSelect').value || '18_plus',
+              question_count: el('enhancedTriviaCountInput').value || '25',
+              source: el('enhancedTriviaSourceSelect').value || 'offline_curated',
+              team_mode: el('enhancedTriviaTeamModeSelect').value,
+              buzzer_mode: el('enhancedTriviaBuzzerModeSelect').value,
+              buzz_bonus: el('enhancedTriviaBuzzBonusInput').value || '1',
+              steal_enabled: el('enhancedTriviaStealEnabledSelect').value,
+              answer_seconds: el('enhancedAnswerSecondsInput').value || '15',
+              reveal_seconds: el('enhancedRevealSecondsInput').value || '5',
+              auto_cycle_enabled: el('enhancedAutoCycleSelect').value,
+            });
             await hostAction('prepare_trivia', {
               categories,
               category: categories[0] || 'fun_facts',
-              age_range: el('enhancedTriviaAgeRangeSelect').value || '18_plus',
-              question_count: parseInt(el('enhancedTriviaCountInput').value || '25', 10),
-              source: el('enhancedTriviaSourceSelect').value || 'offline_curated',
+              age_range: prefs.age_range,
+              question_count: parseInt(prefs.question_count || '25', 10),
+              source: prefs.source || 'offline_curated',
             });
+            hostEditing = false; hostEditUntil = 0;
             await bootstrapHost(); await fetchState();
             setNotice('hostExtraNotice', `Prepared trivia from ${categories.length || 1} categor${categories.length === 1 ? 'y' : 'ies'}.`, 'success');
           } catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
@@ -849,13 +989,29 @@
               reveal_seconds: parseInt(el('enhancedRevealSecondsInput').value || '5', 10),
               auto_cycle_enabled: el('enhancedAutoCycleSelect').value === 'true',
             });
+            const prefs = setHostPrefs({
+              game_mode: 'trivia',
+              categories,
+              age_range: el('enhancedTriviaAgeRangeSelect').value || '18_plus',
+              question_count: el('enhancedTriviaCountInput').value || '25',
+              source: 'ai',
+              ai_theme: el('aiThemeInput').value || '',
+              team_mode: el('enhancedTriviaTeamModeSelect').value,
+              buzzer_mode: el('enhancedTriviaBuzzerModeSelect').value,
+              buzz_bonus: el('enhancedTriviaBuzzBonusInput').value || '1',
+              steal_enabled: el('enhancedTriviaStealEnabledSelect').value,
+              answer_seconds: el('enhancedAnswerSecondsInput').value || '15',
+              reveal_seconds: el('enhancedRevealSecondsInput').value || '5',
+              auto_cycle_enabled: el('enhancedAutoCycleSelect').value,
+            });
             await hostAction('prepare_trivia', {
               categories,
-              category: categories[0] || el('aiThemeInput').value || 'fun_facts',
-              age_range: el('enhancedTriviaAgeRangeSelect').value || '18_plus',
-              question_count: parseInt(el('enhancedTriviaCountInput').value || '25', 10),
+              category: categories[0] || prefs.ai_theme || 'fun_facts',
+              age_range: prefs.age_range,
+              question_count: parseInt(prefs.question_count || '25', 10),
               source: 'ai',
             });
+            hostEditing = false; hostEditUntil = 0;
             await bootstrapHost(); await fetchState();
             setNotice('hostExtraNotice', 'AI trivia generated.', 'success');
           } catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
@@ -984,6 +1140,17 @@
         if (!provider) return;
         const speakerSelect = el('enhancedTtsTargetsSelect');
         const speakerTargets = Array.from(speakerSelect?.selectedOptions || []).map((option) => option.value).filter(Boolean);
+        setHostPrefs({
+          voice_enabled: el('enhancedTtsEnabledSelect').value,
+          provider_entity: provider.value || '',
+          speaker_targets: speakerTargets,
+          voice: el('enhancedTtsVoiceInput').value || '',
+          language: el('enhancedTtsLanguageInput').value || '',
+          announce_answers: el('enhancedAnnounceAnswersSelect').value,
+          announce_correct_players: el('enhancedAnnouncePlayersSelect').value,
+          start_timer_after_voice: el('enhancedTimerAfterVoiceSelect').value,
+          speech_rate_wpm: el('enhancedSpeechRateInput').value || '155',
+        });
         await hostAction('set_trivia_voice_config', {
           enabled: el('enhancedTtsEnabledSelect').value === 'true',
           provider_entity: provider.value || '',
@@ -999,6 +1166,7 @@
 
       function renderHostControls(state, host) {
         ensureHostControls();
+        const prefs = getHostPrefs();
         const skipHydration = shouldSkipHostHydration();
         el('joinCodeTop').textContent = state.join_code || '------';
         const users = Array.isArray(host?.available_host_users) ? host.available_host_users : [];
@@ -1008,13 +1176,14 @@
           return `<option value="${escapeAttr(user.id)}"${selectedIds.has(user.id) ? ' selected' : ''}>${label}</option>`;
         }).join('');
 
-        el('enhancedGameModeSelect').value = state.game_mode || 'cards';
+        if (!skipHydration) el('enhancedGameModeSelect').value = prefs.game_mode || state.game_mode || 'cards';
 
         const isTrivia = state.game_mode === 'trivia';
         document.querySelectorAll('.trivia-only').forEach((node) => node.classList.toggle('hidden', !isTrivia));
         document.querySelectorAll('.cards-only').forEach((node) => node.classList.toggle('hidden', isTrivia));
 
         renderDeckSelect(state);
+        if (!skipHydration && prefs.deck_name && el('deckSelect')) el('deckSelect').value = prefs.deck_name;
 
         const options = new Map();
         (host?.trivia?.categories || []).forEach((value) => {
@@ -1030,7 +1199,7 @@
           if (clean) options.set(clean, pack.name || clean);
         });
 
-        const remembered = JSON.parse(localStorage.getItem('ha_card_game_selected_categories') || '[]');
+        const remembered = Array.isArray(prefs.categories) ? prefs.categories : JSON.parse(localStorage.getItem('ha_card_game_selected_categories') || '[]');
         const fallbackSelected = [state?.trivia?.category].filter(Boolean);
         const selectedSet = new Set((remembered.length ? remembered : fallbackSelected).filter(Boolean));
         const customPacks = [ ...(state?.trivia?.custom_packs || []), ...(host?.custom_trivia_packs || []) ];
@@ -1072,16 +1241,16 @@
         const providers = (host?.trivia?.tts_providers || []).map((item) => ({ value: item.entity_id, label: item.name || item.entity_id }));
         el('enhancedTtsProviderSelect').innerHTML = ['<option value="">Choose provider...</option>'].concat(providers.map((item) => `<option value="${escapeAttr(item.value)}">${escapeHtml(item.label)}</option>`)).join('');
         if (!skipHydration) {
-          el('enhancedTtsEnabledSelect').value = String(Boolean(voice.enabled));
-          el('enhancedTtsProviderSelect').value = voice.provider_entity || '';
-          el('enhancedTtsVoiceInput').value = voice.voice || '';
-          el('enhancedTtsLanguageInput').value = voice.language || '';
-          el('enhancedSpeechRateInput').value = voice.speech_rate_wpm ?? 155;
-          el('enhancedTimerAfterVoiceSelect').value = String(voice.start_timer_after_voice !== false);
-          el('enhancedAnnounceAnswersSelect').value = String(voice.announce_answers !== false);
-          el('enhancedAnnouncePlayersSelect').value = String(voice.announce_correct_players !== false);
+          el('enhancedTtsEnabledSelect').value = prefs.voice_enabled || String(Boolean(voice.enabled));
+          el('enhancedTtsProviderSelect').value = prefs.provider_entity || voice.provider_entity || '';
+          el('enhancedTtsVoiceInput').value = prefs.voice || voice.voice || '';
+          el('enhancedTtsLanguageInput').value = prefs.language || voice.language || '';
+          el('enhancedSpeechRateInput').value = prefs.speech_rate_wpm || (voice.speech_rate_wpm ?? 155);
+          el('enhancedTimerAfterVoiceSelect').value = prefs.start_timer_after_voice || String(voice.start_timer_after_voice !== false);
+          el('enhancedAnnounceAnswersSelect').value = prefs.announce_answers || String(voice.announce_answers !== false);
+          el('enhancedAnnouncePlayersSelect').value = prefs.announce_correct_players || String(voice.announce_correct_players !== false);
         }
-        const selectedTargets = new Set((voice.speaker_targets || []).map((v) => String(v)));
+        const selectedTargets = new Set(((Array.isArray(prefs.speaker_targets) ? prefs.speaker_targets : null) || voice.speaker_targets || []).map((v) => String(v)));
         el('enhancedTtsTargetsSelect').innerHTML = (host?.trivia?.speaker_targets || []).map((item) => {
           const value = String(item.entity_id || '');
           const label = String(item.name || value);
@@ -1102,6 +1271,7 @@
         el('promptText').textContent = state.current_prompt || 'Waiting for the next round…';
         renderPlayers(state.players || [], state.judge);
         renderPlayerControls(state);
+        scheduleStandaloneTriviaAutoAdvance(state);
         if (hostEnabled) renderHostControls(state, latestHost);
       }
 
