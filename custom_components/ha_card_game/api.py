@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from typing import Any
 
 import segno
 from aiohttp import web
@@ -10,8 +11,20 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.network import get_url
 
-from .const import DOMAIN, GAME_MODE_CARDS, GAME_MODE_JUDGE_PARTY, GAME_MODE_TRIVIA, WS_EVENT_ERROR
+from .const import (
+    DOMAIN,
+    GAME_MODE_CARDS,
+    GAME_MODE_JUDGE_PARTY,
+    GAME_MODE_TRIVIA,
+    WS_EVENT_ERROR,
+)
 from .coordinator import CardGameCoordinator
+
+
+def _as_clean_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    return str(value).strip()
 
 
 async def async_register_api(hass: HomeAssistant, coordinator: CardGameCoordinator) -> None:
@@ -19,7 +32,7 @@ async def async_register_api(hass: HomeAssistant, coordinator: CardGameCoordinat
     if not str(coordinator.base_url or "").strip():
         try:
             coordinator.base_url = str(get_url(hass)).strip().rstrip("/")
-        except Exception:  # pragma: no cover - fallback if URL not configured
+        except Exception:
             coordinator.base_url = ""
 
     hass.http.register_view(CardGameStateView(coordinator))
@@ -36,8 +49,6 @@ async def async_register_api(hass: HomeAssistant, coordinator: CardGameCoordinat
 
 
 class BaseCardGameView(HomeAssistantView):
-    """Base view for public card game endpoints."""
-
     requires_auth = False
 
     def __init__(self, coordinator: CardGameCoordinator) -> None:
@@ -62,8 +73,6 @@ class BaseCardGameView(HomeAssistantView):
 
 
 class BaseCardGameHostView(BaseCardGameView):
-    """Base view for authenticated host endpoints."""
-
     requires_auth = True
 
     async def ensure_host_access(self, request: web.Request) -> web.Response | None:
@@ -191,7 +200,9 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
         denied = await self.ensure_host_access(request)
         if denied is not None:
             return denied
+
         host_users = await self.coordinator.async_available_host_users()
+        reveal_state = self.coordinator.engine.state.as_dict().get("reveal", {})
         return self.json({
             "ok": True,
             "state": self.coordinator.player_state(None),
@@ -201,48 +212,17 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                 "available_host_users": host_users,
                 "host_policy": "admins_if_empty" if not self.coordinator.allowed_host_user_ids else "selected_users_only",
                 "available_actions": [
-                    "start_game",
-                    "set_game_mode",
-                    "next_round",
-                    "reset_game",
-                    "set_deck",
-                    "reload_decks",
-                    "remove_player",
-                    "set_round_timer",
-                    "clear_round_timer",
-                    "set_reveal_config",
-                    "save_custom_theme_preset",
-                    "delete_custom_theme_preset",
-                    "import_theme_presets",
-                    "export_theme_presets",
-                    "import_deck_packs",
-                    "export_deck_packs",
-                    "set_ai_settings",
-                    "set_parental_controls",
-                    "set_allowed_host_users",
-                    "approve_ai_queue_item",
-                    "reject_ai_queue_item",
-                    "generate_ai_deck",
-                    "extend_deck_with_ai",
-                    "prepare_trivia",
-                    "start_trivia_round",
-                    "grade_trivia_round",
-                    "set_trivia_settings",
-                    "assign_player_team",
-                    "create_remote_invite",
-                    "buzz_player",
-                    "set_scene_media_config",
-                    "trigger_scene_media_event",
-                    "start_tournament",
-                    "end_tournament",
-                    "update_profile",
-                    "reset_profile",
-                    "delete_profile",
-                    "update_tournament_settings",
-                    "clear_tournament_history",
-                    "save_custom_trivia_pack",
-                    "delete_custom_trivia_pack",
-                    "import_trivia_pack",
+                    "start_game", "set_game_mode", "next_round", "reset_game", "set_deck", "reload_decks",
+                    "remove_player", "set_round_timer", "clear_round_timer", "set_reveal_config",
+                    "save_custom_theme_preset", "delete_custom_theme_preset", "import_theme_presets",
+                    "export_theme_presets", "import_deck_packs", "export_deck_packs", "set_ai_settings",
+                    "set_parental_controls", "set_allowed_host_users", "approve_ai_queue_item",
+                    "reject_ai_queue_item", "generate_ai_deck", "extend_deck_with_ai", "prepare_trivia",
+                    "start_trivia_round", "grade_trivia_round", "set_trivia_settings", "set_trivia_voice_config",
+                    "assign_player_team", "create_remote_invite", "buzz_player", "set_scene_media_config",
+                    "trigger_scene_media_event", "start_tournament", "end_tournament", "update_profile",
+                    "reset_profile", "delete_profile", "update_tournament_settings", "clear_tournament_history",
+                    "save_custom_trivia_pack", "delete_custom_trivia_pack", "import_trivia_pack",
                 ],
                 "game_modes": [
                     {"value": GAME_MODE_TRIVIA, "label": "Trivia"},
@@ -250,11 +230,11 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                     {"value": GAME_MODE_JUDGE_PARTY, "label": "Kids Cards Against Us"},
                 ],
                 "reveal": {
-                    "sound_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("sound_options", [])),
-                    "flip_style_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("flip_style_options", [])),
-                    "tick_sound_pack_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("tick_sound_pack_options", [])),
-                    "theme_preset_options": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("theme_preset_options", [])),
-                    "custom_theme_presets": list(self.coordinator.engine.state.as_dict().get("reveal", {}).get("custom_theme_presets", [])),
+                    "sound_options": list(reveal_state.get("sound_options", [])),
+                    "flip_style_options": list(reveal_state.get("flip_style_options", [])),
+                    "tick_sound_pack_options": list(reveal_state.get("tick_sound_pack_options", [])),
+                    "theme_preset_options": list(reveal_state.get("theme_preset_options", [])),
+                    "custom_theme_presets": list(reveal_state.get("custom_theme_presets", [])),
                     "import_modes": ["merge", "replace"],
                     "export_url": f"/api/{DOMAIN}/host/presets/export",
                 },
@@ -265,13 +245,16 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                 "ai": {"settings": self.coordinator.ai_generator.settings.as_dict()},
                 "trivia": {
                     "categories": list(self.coordinator._available_offline_trivia_categories()),
-                    "age_ranges": ["6_8","9_12","13_17","18_plus"],
+                    "age_ranges": ["6_8", "9_12", "13_17", "18_plus"],
                     "teams": ["Solo", "Team A", "Team B"],
                     "buzzer_modes": [False, True],
                     "sources": ["ai", "offline_curated"],
                     "answer_seconds": int(getattr(self.coordinator, "trivia_answer_seconds", 15)),
                     "reveal_seconds": int(getattr(self.coordinator, "trivia_reveal_seconds", 5)),
                     "auto_cycle_enabled": bool(getattr(self.coordinator, "trivia_auto_cycle_enabled", True)),
+                    "voice": dict(getattr(self.coordinator, "trivia_voice_config", {})),
+                    "tts_providers": await self.coordinator.async_available_tts_providers() if hasattr(self.coordinator, "async_available_tts_providers") else [],
+                    "speaker_targets": await self.coordinator.async_available_speakers() if hasattr(self.coordinator, "async_available_speakers") else [],
                 },
                 "scene_media": dict(self.coordinator.scene_media_config),
                 "tournament": self.coordinator._tournament_state(),
@@ -288,6 +271,7 @@ class CardGameHostActionView(BaseCardGameHostView):
         denied = await self.ensure_host_access(request)
         if denied is not None:
             return denied
+
         data = await request.json()
         action = str(data.get("action", "")).strip()
 
@@ -318,20 +302,17 @@ class CardGameHostActionView(BaseCardGameHostView):
             elif action == "set_reveal_config":
                 await self.coordinator.async_set_reveal_config(
                     duration_ms=int(data["duration_ms"]) if data.get("duration_ms") is not None else None,
-                    sound=str(data.get("sound")).strip() if data.get("sound") is not None else None,
+                    sound=_as_clean_str(data.get("sound")),
                     auto_advance_enabled=bool(data.get("auto_advance_enabled")) if data.get("auto_advance_enabled") is not None else None,
                     auto_advance_seconds=int(data["auto_advance_seconds"]) if data.get("auto_advance_seconds") is not None else None,
                     submission_reveal_enabled=bool(data.get("submission_reveal_enabled")) if data.get("submission_reveal_enabled") is not None else None,
                     submission_reveal_step_ms=int(data["submission_reveal_step_ms"]) if data.get("submission_reveal_step_ms") is not None else None,
-                    flip_style=str(data.get("flip_style")).strip() if data.get("flip_style") is not None else None,
-                    tick_sound_pack=str(data.get("tick_sound_pack")).strip() if data.get("tick_sound_pack") is not None else None,
-                    theme_preset=str(data.get("theme_preset")).strip() if data.get("theme_preset") is not None else None,
+                    flip_style=_as_clean_str(data.get("flip_style")),
+                    tick_sound_pack=_as_clean_str(data.get("tick_sound_pack")),
+                    theme_preset=_as_clean_str(data.get("theme_preset")),
                 )
             elif action == "save_custom_theme_preset":
-                await self.coordinator.async_save_custom_theme_preset(
-                    str(data.get("name", "")).strip(),
-                    str(data.get("description", "")).strip(),
-                )
+                await self.coordinator.async_save_custom_theme_preset(str(data.get("name", "")).strip(), str(data.get("description", "")).strip())
             elif action == "delete_custom_theme_preset":
                 await self.coordinator.async_delete_custom_theme_preset(str(data.get("preset_slug", "")).strip())
             elif action == "import_theme_presets":
@@ -347,9 +328,9 @@ class CardGameHostActionView(BaseCardGameHostView):
             elif action == "set_ai_settings":
                 await self.coordinator.async_set_ai_settings(
                     enabled=bool(data.get("enabled")) if data.get("enabled") is not None else None,
-                    endpoint=str(data.get("endpoint")).strip() if data.get("endpoint") is not None else None,
-                    model=str(data.get("model")).strip() if data.get("model") is not None else None,
-                    api_key=str(data.get("api_key")).strip() if data.get("api_key") is not None else None,
+                    endpoint=_as_clean_str(data.get("endpoint")),
+                    model=_as_clean_str(data.get("model")),
+                    api_key=_as_clean_str(data.get("api_key")),
                     use_local_fallback=bool(data.get("use_local_fallback")) if data.get("use_local_fallback") is not None else None,
                 )
             elif action == "set_allowed_host_users":
@@ -361,7 +342,7 @@ class CardGameHostActionView(BaseCardGameHostView):
                 categories = data.get("allowed_trivia_categories")
                 await self.coordinator.async_set_parental_controls(
                     enabled=bool(data.get("enabled")) if data.get("enabled") is not None else None,
-                    content_mode=str(data.get("content_mode")).strip() if data.get("content_mode") is not None else None,
+                    content_mode=_as_clean_str(data.get("content_mode")),
                     require_ai_approval=bool(data.get("require_ai_approval")) if data.get("require_ai_approval") is not None else None,
                     allow_remote_players=bool(data.get("allow_remote_players")) if data.get("allow_remote_players") is not None else None,
                     allowed_trivia_categories=list(categories) if isinstance(categories, list) else None,
@@ -398,7 +379,7 @@ class CardGameHostActionView(BaseCardGameHostView):
                     category=str(data.get("category", "fun_facts")).strip(),
                     categories=[str(item).strip() for item in categories if str(item).strip()] if isinstance(categories, list) else None,
                     age_range=str(data.get("age_range", "18_plus")).strip(),
-                    difficulty=str(data.get("difficulty")).strip() if data.get("difficulty") else None,
+                    difficulty=_as_clean_str(data.get("difficulty")),
                     question_count=int(data.get("question_count", 10)),
                     source=str(data.get("source", "ai")).strip() or "ai",
                 )
@@ -417,31 +398,40 @@ class CardGameHostActionView(BaseCardGameHostView):
                     reveal_seconds=int(data.get("reveal_seconds")) if data.get("reveal_seconds") is not None else None,
                     auto_cycle_enabled=bool(data.get("auto_cycle_enabled")) if data.get("auto_cycle_enabled") is not None else None,
                 )
-            elif action == "assign_player_team":
-                await self.coordinator.async_assign_player_team(
-                    str(data.get("player_name", "")).strip(),
-                    str(data.get("team_name", "")).strip(),
+            elif action == "set_trivia_voice_config":
+                if not hasattr(self.coordinator, "async_set_trivia_voice_config"):
+                    return self.json_error("Trivia voice config is not supported by this coordinator")
+                speaker_targets = data.get("speaker_targets")
+                await self.coordinator.async_set_trivia_voice_config(
+                    enabled=bool(data.get("enabled")) if data.get("enabled") is not None else None,
+                    provider_entity=_as_clean_str(data.get("provider_entity")),
+                    speaker_targets=list(speaker_targets) if isinstance(speaker_targets, list) else None,
+                    voice=_as_clean_str(data.get("voice")),
+                    language=_as_clean_str(data.get("language")),
+                    announce_answers=bool(data.get("announce_answers")) if data.get("announce_answers") is not None else None,
+                    announce_correct_players=bool(data.get("announce_correct_players")) if data.get("announce_correct_players") is not None else None,
+                    start_timer_after_voice=bool(data.get("start_timer_after_voice")) if data.get("start_timer_after_voice") is not None else None,
+                    speech_rate_wpm=int(data.get("speech_rate_wpm")) if data.get("speech_rate_wpm") is not None else None,
                 )
+            elif action == "assign_player_team":
+                await self.coordinator.async_assign_player_team(str(data.get("player_name", "")).strip(), str(data.get("team_name", "")).strip())
             elif action == "create_remote_invite":
                 invite = await self.coordinator.async_create_remote_invite(str(data.get("player_name", "")).strip())
                 return self.json({"ok": True, "state": self.coordinator.player_state(None), "invite": invite})
             elif action == "set_scene_media_config":
                 await self.coordinator.async_set_scene_media_config(
                     enabled=bool(data.get("enabled")) if data.get("enabled") is not None else None,
-                    start_scene=str(data.get("start_scene")).strip() if data.get("start_scene") is not None else None,
-                    reveal_scene=str(data.get("reveal_scene")).strip() if data.get("reveal_scene") is not None else None,
-                    winner_scene=str(data.get("winner_scene")).strip() if data.get("winner_scene") is not None else None,
-                    media_player=str(data.get("media_player")).strip() if data.get("media_player") is not None else None,
-                    start_sound=str(data.get("start_sound")).strip() if data.get("start_sound") is not None else None,
-                    reveal_sound_media=str(data.get("reveal_sound_media")).strip() if data.get("reveal_sound_media") is not None else None,
-                    winner_sound=str(data.get("winner_sound")).strip() if data.get("winner_sound") is not None else None,
+                    start_scene=_as_clean_str(data.get("start_scene")),
+                    reveal_scene=_as_clean_str(data.get("reveal_scene")),
+                    winner_scene=_as_clean_str(data.get("winner_scene")),
+                    media_player=_as_clean_str(data.get("media_player")),
+                    start_sound=_as_clean_str(data.get("start_sound")),
+                    reveal_sound_media=_as_clean_str(data.get("reveal_sound_media")),
+                    winner_sound=_as_clean_str(data.get("winner_sound")),
                     volume_level=float(data.get("volume_level")) if data.get("volume_level") is not None else None,
                 )
             elif action == "trigger_scene_media_event":
-                await self.coordinator.async_trigger_scene_media_event(
-                    str(data.get("event_name", "winner")).strip() or "winner",
-                    str(data.get("winner")).strip() if data.get("winner") is not None else None,
-                )
+                await self.coordinator.async_trigger_scene_media_event(str(data.get("event_name", "winner")).strip() or "winner", _as_clean_str(data.get("winner")))
             elif action == "start_tournament":
                 await self.coordinator.async_start_tournament(
                     name=str(data.get("name", "House Tournament")).strip() or "House Tournament",
@@ -451,10 +441,7 @@ class CardGameHostActionView(BaseCardGameHostView):
             elif action == "end_tournament":
                 await self.coordinator.async_end_tournament()
             elif action == "update_profile":
-                result = await self.coordinator.async_update_profile(
-                    str(data.get("player_name", "")).strip(),
-                    dict(data.get("updates", {})),
-                )
+                result = await self.coordinator.async_update_profile(str(data.get("player_name", "")).strip(), dict(data.get("updates", {})))
                 return self.json({"ok": True, "state": self.coordinator.player_state(None), "result": result})
             elif action == "reset_profile":
                 await self.coordinator.async_reset_profile(str(data.get("player_name", "")).strip())
@@ -462,7 +449,7 @@ class CardGameHostActionView(BaseCardGameHostView):
                 await self.coordinator.async_delete_profile(str(data.get("player_name", "")).strip())
             elif action == "update_tournament_settings":
                 await self.coordinator.async_update_tournament_settings(
-                    name=str(data.get("name")).strip() if data.get("name") is not None else None,
+                    name=_as_clean_str(data.get("name")),
                     target_score=int(data.get("target_score")) if data.get("target_score") is not None else None,
                     enabled=bool(data.get("enabled")) if data.get("enabled") is not None else None,
                 )
@@ -504,12 +491,7 @@ class CardGameHostPresetExportView(BaseCardGameHostView):
     async def get(self, request: web.Request) -> web.Response:
         include_builtin = str(request.query.get("include_builtin", "false")).lower() in {"1", "true", "yes", "on"}
         payload = await self.coordinator.async_export_theme_presets(include_builtin=include_builtin)
-        return web.json_response(
-            payload,
-            headers={
-                "Content-Disposition": 'attachment; filename="ha_card_game_theme_presets.json"',
-            },
-        )
+        return web.json_response(payload, headers={"Content-Disposition": 'attachment; filename="ha_card_game_theme_presets.json"'})
 
 
 class CardGameHostDeckExportView(BaseCardGameHostView):
@@ -519,9 +501,4 @@ class CardGameHostDeckExportView(BaseCardGameHostView):
     async def get(self, request: web.Request) -> web.Response:
         include_builtin = str(request.query.get("include_builtin", "false")).lower() in {"1", "true", "yes", "on"}
         payload = await self.coordinator.async_export_decks(include_builtin=include_builtin)
-        return web.json_response(
-            payload,
-            headers={
-                "Content-Disposition": 'attachment; filename="ha_card_game_deck_packs.json"',
-            },
-        )
+        return web.json_response(payload, headers={"Content-Disposition": 'attachment; filename="ha_card_game_deck_packs.json"'})
