@@ -181,9 +181,54 @@
       let reconnectTimer = null;
       let hostEnabled = false;
       let countdownTimer = null;
+      let hostEditing = false;
+      let hostEditUntil = 0;
 
       const el = (id) => document.getElementById(id);
       const show = (node, visible) => node.classList.toggle('hidden', !visible);
+
+      function markHostEditing(ms = 8000) {
+        hostEditing = true;
+        hostEditUntil = Date.now() + ms;
+      }
+
+      function clearHostEditingSoon(ms = 900) {
+        hostEditUntil = Date.now() + ms;
+        window.setTimeout(() => {
+          if (Date.now() >= hostEditUntil) hostEditing = false;
+        }, ms + 50);
+      }
+
+      function shouldSkipHostHydration() {
+        if (!hostEditing && Date.now() >= hostEditUntil) return false;
+        const active = document.activeElement;
+        if (!active) return false;
+        const tag = (active.tagName || '').toLowerCase();
+        return tag === 'input' || tag === 'select' || tag === 'textarea';
+      }
+
+      function wireHostEditingGuards() {
+        if (document.body.dataset.hostEditingGuards === 'true') return;
+        document.body.dataset.hostEditingGuards = 'true';
+
+        document.addEventListener('focusin', (event) => {
+          const tag = (event.target?.tagName || '').toLowerCase();
+          if (tag === 'input' || tag === 'select' || tag === 'textarea') markHostEditing(8000);
+        });
+
+        document.addEventListener('input', (event) => {
+          const tag = (event.target?.tagName || '').toLowerCase();
+          if (tag === 'input' || tag === 'select' || tag === 'textarea') markHostEditing(8000);
+        });
+
+        document.addEventListener('change', () => {
+          markHostEditing(4000);
+        });
+
+        document.addEventListener('focusout', () => {
+          clearHostEditingSoon(900);
+        });
+      }
 
       function setNotice(targetId, message, type = '') {
         const node = el(targetId);
@@ -729,7 +774,7 @@
             });
             setNotice('hostExtraNotice', 'AI deck generated.', 'success');
           } catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
-          finally { btn.disabled = false; btn.textContent = old; }
+          finally { hostEditing = false; hostEditUntil = 0; btn.disabled = false; btn.textContent = old; }
         });
 
         el('extendDeckAiBtn').addEventListener('click', async () => {
@@ -747,7 +792,7 @@
             });
             setNotice('hostExtraNotice', 'Selected deck expanded with AI cards.', 'success');
           } catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
-          finally { btn.disabled = false; btn.textContent = old; }
+          finally { hostEditing = false; hostEditUntil = 0; btn.disabled = false; btn.textContent = old; }
         });
 
         el('enhancedPrepareTriviaBtn').addEventListener('click', async () => {
@@ -777,7 +822,7 @@
             await bootstrapHost(); await fetchState();
             setNotice('hostExtraNotice', `Prepared trivia from ${categories.length || 1} categor${categories.length === 1 ? 'y' : 'ies'}.`, 'success');
           } catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
-          finally { btn.disabled = false; btn.textContent = old; }
+          finally { hostEditing = false; hostEditUntil = 0; btn.disabled = false; btn.textContent = old; }
         });
 
         el('enhancedGenerateAiTriviaBtn').addEventListener('click', async () => {
@@ -807,7 +852,7 @@
             await bootstrapHost(); await fetchState();
             setNotice('hostExtraNotice', 'AI trivia generated.', 'success');
           } catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
-          finally { btn.disabled = false; btn.textContent = old; }
+          finally { hostEditing = false; hostEditUntil = 0; btn.disabled = false; btn.textContent = old; }
         });
 
         el('enhancedStartTriviaBtn').addEventListener('click', async () => {
@@ -886,6 +931,7 @@
               questions,
             });
             await bootstrapHost(); await fetchState();
+            hostEditing = false; hostEditUntil = 0;
             setNotice('manualEditorNotice', 'Custom trivia pack saved.', 'success');
           } catch (err) { setNotice('manualEditorNotice', err.message, 'warning'); }
         });
@@ -920,6 +966,7 @@
           try {
             await saveVoiceSettings();
             await bootstrapHost(); await fetchState();
+            hostEditing = false; hostEditUntil = 0;
             setNotice('hostExtraNotice', 'Voice settings saved.', 'success');
           } catch (err) { setNotice('hostExtraNotice', err.message, 'warning'); }
         });
@@ -945,6 +992,7 @@
 
       function renderHostControls(state, host) {
         ensureHostControls();
+        const skipHydration = shouldSkipHostHydration();
         el('joinCodeTop').textContent = state.join_code || '------';
         const users = Array.isArray(host?.available_host_users) ? host.available_host_users : [];
         const selectedIds = new Set(Array.isArray(host?.allowed_host_user_ids) ? host.allowed_host_user_ids : []);
@@ -989,28 +1037,32 @@
           localStorage.setItem('ha_card_game_selected_categories', JSON.stringify(selected));
         };
 
-        el('enhancedTriviaCountInput').value = 25;
-        el('enhancedTriviaAgeRangeSelect').value = state?.trivia?.age_range || '18_plus';
-        el('enhancedTriviaSourceSelect').value = state?.trivia?.source || 'offline_curated';
-        el('enhancedTriviaTeamModeSelect').value = String(Boolean(state?.trivia?.team_mode));
-        el('enhancedTriviaBuzzerModeSelect').value = String(Boolean(state?.trivia?.buzzer_mode));
-        el('enhancedTriviaBuzzBonusInput').value = state?.trivia?.buzz_bonus ?? 1;
-        el('enhancedTriviaStealEnabledSelect').value = String(Boolean(state?.trivia?.steal_enabled));
-        el('enhancedAnswerSecondsInput').value = state?.trivia?.answer_seconds || state?.round_timer_duration || 15;
-        el('enhancedRevealSecondsInput').value = state?.trivia?.reveal_seconds || 5;
-        el('enhancedAutoCycleSelect').value = String(state?.trivia?.auto_cycle_enabled !== false);
+        if (!skipHydration) {
+          if (!el('enhancedTriviaCountInput').value) el('enhancedTriviaCountInput').value = '25';
+          el('enhancedTriviaAgeRangeSelect').value = state?.trivia?.age_range || '18_plus';
+          el('enhancedTriviaSourceSelect').value = state?.trivia?.source || 'offline_curated';
+          el('enhancedTriviaTeamModeSelect').value = String(Boolean(state?.trivia?.team_mode));
+          el('enhancedTriviaBuzzerModeSelect').value = String(Boolean(state?.trivia?.buzzer_mode));
+          el('enhancedTriviaBuzzBonusInput').value = state?.trivia?.buzz_bonus ?? 1;
+          el('enhancedTriviaStealEnabledSelect').value = String(Boolean(state?.trivia?.steal_enabled));
+          el('enhancedAnswerSecondsInput').value = state?.trivia?.answer_seconds || state?.round_timer_duration || 15;
+          el('enhancedRevealSecondsInput').value = state?.trivia?.reveal_seconds || 5;
+          el('enhancedAutoCycleSelect').value = String(state?.trivia?.auto_cycle_enabled !== false);
+        }
 
         const voice = host?.trivia?.voice || {};
         const providers = (host?.trivia?.tts_providers || []).map((item) => ({ value: item.entity_id, label: item.name || item.entity_id }));
         el('enhancedTtsProviderSelect').innerHTML = ['<option value="">Choose provider...</option>'].concat(providers.map((item) => `<option value="${escapeAttr(item.value)}">${escapeHtml(item.label)}</option>`)).join('');
-        el('enhancedTtsEnabledSelect').value = String(Boolean(voice.enabled));
-        el('enhancedTtsProviderSelect').value = voice.provider_entity || '';
-        el('enhancedTtsVoiceInput').value = voice.voice || '';
-        el('enhancedTtsLanguageInput').value = voice.language || '';
-        el('enhancedSpeechRateInput').value = voice.speech_rate_wpm ?? 155;
-        el('enhancedTimerAfterVoiceSelect').value = String(voice.start_timer_after_voice !== false);
-        el('enhancedAnnounceAnswersSelect').value = String(voice.announce_answers !== false);
-        el('enhancedAnnouncePlayersSelect').value = String(voice.announce_correct_players !== false);
+        if (!skipHydration) {
+          el('enhancedTtsEnabledSelect').value = String(Boolean(voice.enabled));
+          el('enhancedTtsProviderSelect').value = voice.provider_entity || '';
+          el('enhancedTtsVoiceInput').value = voice.voice || '';
+          el('enhancedTtsLanguageInput').value = voice.language || '';
+          el('enhancedSpeechRateInput').value = voice.speech_rate_wpm ?? 155;
+          el('enhancedTimerAfterVoiceSelect').value = String(voice.start_timer_after_voice !== false);
+          el('enhancedAnnounceAnswersSelect').value = String(voice.announce_answers !== false);
+          el('enhancedAnnouncePlayersSelect').value = String(voice.announce_correct_players !== false);
+        }
         const selectedTargets = new Set((voice.speaker_targets || []).map((v) => String(v)));
         el('enhancedTtsTargetsSelect').innerHTML = (host?.trivia?.speaker_targets || []).map((item) => {
           const value = String(item.entity_id || '');
@@ -1147,6 +1199,8 @@
 
       if (nameFromUrl && el('playerNameInput')) el('playerNameInput').value = decodeURIComponent(nameFromUrl);
       if (joinCodeFromUrl) setNotice('playerNotice', `Joining room ${joinCodeFromUrl}`, '');
+
+      wireHostEditingGuards();
 
       bootstrapHost().catch(() => {});
       fetchState().catch(() => {});
