@@ -860,7 +860,7 @@
               <button class="secondary trivia-only" id="enhancedGenerateAiTriviaBtn">Generate AI trivia deck</button>
               <button class="secondary trivia-only" id="enhancedPauseTriviaBtn">Pause auto next</button>
               <button class="secondary trivia-only" id="enhancedStartTriviaBtn">Start trivia</button>
-              <button class="secondary trivia-only" id="enhancedNewCategoryBtn">New custom category</button>
+              <button class="secondary trivia-only" id="enhancedOpenTriviaEditorBtn">Open manual trivia editor</button>
             </div>
           `;
           hostControls.insertBefore(panel, hostControls.firstChild);
@@ -913,6 +913,12 @@
               }
 
               const importedCount = Array.isArray(payload.questions) ? payload.questions.length : 0;
+              const importedSlug = String(payload.slug || payload.name || '').trim();
+              if (importedSlug) {
+                const existing = JSON.parse(win.localStorage.getItem('ha_card_game_selected_categories') || '[]');
+                const merged = Array.from(new Set([importedSlug, ...existing].filter(Boolean)));
+                win.localStorage.setItem('ha_card_game_selected_categories', JSON.stringify(merged));
+              }
               notice.textContent = `Imported trivia pack: ${payload.name || payload.slug} (${importedCount} questions)`;
               win.setNotice('hostExtraNotice', `Imported trivia pack: ${payload.name || payload.slug}`, 'success');
             } catch (err) {
@@ -1076,13 +1082,14 @@
             }
           });
 
-          doc.getElementById('enhancedNewCategoryBtn').addEventListener('click', () => {
+          doc.getElementById('enhancedOpenTriviaEditorBtn').addEventListener('click', () => {
             const select = doc.getElementById('customTriviaPackSelect');
             const nameInput = doc.getElementById('customTriviaPackNameInput');
             if (select) select.value = '';
             if (nameInput) nameInput.focus();
             const manual = doc.getElementById('manualEditorMount');
             if (manual) manual.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            win.setNotice('hostExtraNotice', 'Scrolled to the manual trivia editor.', 'success');
           });
         }
 
@@ -1099,8 +1106,14 @@
         if (categorySelect) {
           const options = getTriviaCategoryOptions(win, doc);
           const remembered = JSON.parse(win.localStorage.getItem('ha_card_game_selected_categories') || '[]');
-          const selectedSet = new Set(remembered.length ? remembered : [trivia.category].filter(Boolean));
-          categorySelect.innerHTML = options.map((item) => `<option value="${item.value}" ${selectedSet.has(item.value) ? 'selected' : ''}>${item.label}</option>`).join('');
+          const fallbackSelected = [trivia.category].filter(Boolean);
+          const selectedSet = new Set((remembered.length ? remembered : fallbackSelected).filter(Boolean));
+          categorySelect.innerHTML = options.map((item) => {
+            const label = item.label || item.value;
+            const isCustom = (state?.trivia?.custom_packs || []).some((pack) => pack.slug === item.value);
+            const shownLabel = isCustom ? `${label} (custom)` : label;
+            return `<option value="${item.value}" ${selectedSet.has(item.value) ? 'selected' : ''}>${shownLabel}</option>`;
+          }).join('');
           categorySelect.onchange = () => {
             const selected = Array.from(categorySelect.selectedOptions || []).map((option) => option.value);
             win.localStorage.setItem('ha_card_game_selected_categories', JSON.stringify(selected));
