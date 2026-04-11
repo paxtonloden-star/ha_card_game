@@ -26,6 +26,7 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         self.trivia_reveal_seconds = 5
         self.trivia_auto_cycle_enabled = True
         self._trivia_cycle_task: asyncio.Task | None = None
+        self._trivia_voice_delay_seconds: float = 0.0
 
     @property
     def join_url(self) -> str:
@@ -43,6 +44,7 @@ class TriviaCoreCoordinator(CardGameCoordinator):
 
     async def async_reset_lobby(self) -> None:
         self._cancel_trivia_cycle_task()
+        self._trivia_voice_delay_seconds = 0.0
         await super().async_reset_lobby()
 
     async def async_apply_options(self, options: dict[str, Any]) -> None:
@@ -77,6 +79,34 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         return int(getattr(self.trivia, "current_index", -1)) < (
             len(getattr(self.trivia, "questions", [])) - 1
         )
+
+    def _build_trivia_question_announcement(self, question: dict[str, Any]) -> str:
+        choices = [str(item).strip() for item in question.get("choices", []) if str(item).strip()]
+        if choices:
+            choice_text = " ".join(
+                f"{chr(65 + idx)}. {choice}." for idx, choice in enumerate(choices[:6])
+            )
+            return f"Trivia question. {question.get('question', '')} Choices are: {choice_text}"
+        return f"Trivia question. {question.get('question', '')}"
+
+    def _build_trivia_results_announcement(self, result: dict[str, Any]) -> str:
+        if not self.trivia_voice_config.get("announce_answers", True):
+            return ""
+        correct_answer = str(result.get("correct_answer", "") or "").strip()
+        explanation = str(result.get("explanation", "") or "").strip()
+        correct_players = [str(item).strip() for item in result.get("correct_players", []) if str(item).strip()]
+
+        parts = []
+        if correct_answer:
+            parts.append(f"The correct answer is {correct_answer}.")
+        if self.trivia_voice_config.get("announce_correct_players", True):
+            if correct_players:
+                parts.append("Correct players: " + ", ".join(correct_players) + ".")
+            else:
+                parts.append("No one got it right this round.")
+        if explanation:
+            parts.append(explanation)
+        return " ".join(parts).strip()
 
     async def _async_trivia_timeout_runner(self, round_number: int, question_index: int, delay: float) -> None:
         try:
@@ -122,6 +152,7 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         self._cancel_trivia_cycle_task()
         if self.game_mode != GAME_MODE_TRIVIA:
             return
+
         if self.engine.state.state == "submitting":
             ends_at = float(getattr(self.engine.state, "round_timer_ends_at", 0) or 0)
             if ends_at:
@@ -134,17 +165,19 @@ class TriviaCoreCoordinator(CardGameCoordinator):
                     )
                 )
             return
+
         if (
             self.engine.state.state == "results"
             and self.trivia_auto_cycle_enabled
             and self.trivia_reveal_seconds > 0
             and self._questions_remaining_after_current()
         ):
+            total_delay = float(self.trivia_reveal_seconds) + float(self._trivia_voice_delay_seconds or 0.0)
             self._trivia_cycle_task = self.hass.async_create_task(
                 self._async_trivia_next_question_runner(
                     self.engine.state.round_number,
                     getattr(self.trivia, "current_index", -1),
-                    float(self.trivia_reveal_seconds),
+                    total_delay,
                 )
             )
 
@@ -258,6 +291,8 @@ class TriviaCoreCoordinator(CardGameCoordinator):
 
     async def async_start_trivia_round(self) -> None:
         self._cancel_trivia_cycle_task()
+        self._trivia_voice_delay_seconds = 0.0
+
         q = self.trivia.next_question()
         self.game_mode = GAME_MODE_TRIVIA
         self.engine.state.round_number += 1
@@ -268,19 +303,37 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         self.engine.state.winner_card = None
         self.engine.state.winner_submission_id = None
         self.engine.state.reveal_order = []
-        seconds = max(1, int(self.trivia_answer_seconds or 15))
-        self.engine.set_round_timer(seconds, time.time() + seconds)
+        self.engine.clear_round_timer()
         self.last_trivia_results = []
         self._reset_trivia_buzzer_state()
         for player in self.engine.state.players:
             player.submitted_card = None
+
+        await self.async_refresh_from_engine()
+
+        if self.trivia_voice_config.get("enabled") and self.trivia_voice_config.get("start_timer_after_voice", True):
+            message = self._build_trivia_question_announcement(q)
+            self._trivia_voice_delay_seconds = await self.async_speak_trivia_text(message)
+            if self._trivia_voice_delay_seconds > 0:
+                await asyncio.sleep(self._trivia_voice_delay_seconds)
+
+        seconds = max(1, int(self.trivia_answer_seconds or 15))
+        self.engine.set_round_timer(seconds, time.time() + seconds)
         await self.async_refresh_from_engine()
 
     async def async_grade_trivia_round(self) -> dict[str, Any]:
         self._cancel_trivia_cycle_task()
+        self._trivia_voice_delay_seconds = 0.0
+
         result = await super().async_grade_trivia_round()
         self.engine.clear_round_timer()
         await self.async_refresh_from_engine()
+
+        if self.trivia_voice_config.get("enabled"):
+            announcement = self._build_trivia_results_announcement(result)
+            self._trivia_voice_delay_seconds = await self.async_speak_trivia_text(announcement)
+            await self.async_refresh_from_engine()
+
         return result
 
     async def async_set_trivia_settings(

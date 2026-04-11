@@ -23,7 +23,6 @@ from .const import (
     SERVICE_START_GAME,
     SERVICE_SUBMIT_CARD,
 )
-
 from .panel import async_register_panel
 from .repairs import ISSUE_DUPLICATE_ENTRIES, async_sync_repairs
 from .trivia_core_coordinator import TriviaCoreCoordinator
@@ -44,8 +43,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
 
     coordinator = TriviaCoreCoordinator(hass)
-    
+
     await coordinator.async_load()
+
+    coordinator.base_url = str(
+        entry.options.get("remote_base_url", entry.data.get("remote_base_url", ""))
+    ).strip().rstrip("/")
+
     await coordinator.async_apply_options({**entry.data, **entry.options})
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
@@ -60,7 +64,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await _async_register_services(hass, coordinator)
     await async_sync_repairs(hass, entry, coordinator)
     return True
-
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -78,6 +81,11 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if coordinator is None:
         return
     panel_enabled = entry.options.get(CONF_ENABLE_PANEL, entry.data.get(CONF_ENABLE_PANEL, True))
+
+    coordinator.base_url = str(
+        entry.options.get("remote_base_url", entry.data.get("remote_base_url", ""))
+    ).strip().rstrip("/")
+
     await coordinator.async_apply_options({**entry.data, **entry.options})
     if panel_enabled:
         await async_register_panel(hass)
