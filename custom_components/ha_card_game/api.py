@@ -242,6 +242,7 @@ class CardGameHostBootstrapView(BaseCardGameHostView):
                     "clear_tournament_history",
                     "save_custom_trivia_pack",
                     "delete_custom_trivia_pack",
+                    "import_trivia_pack",
                 ],
                 "game_modes": [
                     {"value": GAME_MODE_TRIVIA, "label": "Trivia"},
@@ -467,6 +468,17 @@ class CardGameHostActionView(BaseCardGameHostView):
                 )
             elif action == "clear_tournament_history":
                 await self.coordinator.async_clear_tournament_history()
+            elif action == "import_trivia_pack":
+                questions = data.get("questions")
+                if not isinstance(questions, list):
+                    return self.json_error("questions must be a list")
+                result = await self.coordinator.async_save_custom_trivia_pack(
+                    slug=str(data.get("slug", "")).strip(),
+                    name=str(data.get("name", "")).strip(),
+                    description=str(data.get("description", "")).strip(),
+                    questions=questions,
+                )
+                return self.json({"ok": True, "state": self.coordinator.player_state(None), "result": result})
             elif action == "save_custom_trivia_pack":
                 result = await self.coordinator.async_save_custom_trivia_pack(
                     slug=str(data.get("slug", "")).strip(),
