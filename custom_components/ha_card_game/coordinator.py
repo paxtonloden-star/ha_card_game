@@ -334,7 +334,6 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_trigger_scene_media_event("winner", self.engine.state.winner)
         await self.async_refresh_from_engine()
 
-
     async def async_buzz_for_token(self, token: str) -> dict[str, Any]:
         if self.game_mode != GAME_MODE_TRIVIA or self.engine.state.state != "submitting":
             raise ValueError("Trivia buzzer is not active")
@@ -378,14 +377,12 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.engine.delete_custom_theme_preset(preset_slug)
         await self.async_refresh_from_engine()
 
-
     async def async_export_theme_presets(self, include_builtin: bool = False) -> dict[str, Any]:
         return self.engine.export_theme_presets(include_builtin=include_builtin)
 
     async def async_import_theme_presets(self, payload: dict[str, Any], mode: str = "merge") -> None:
         self.engine.import_theme_presets(payload, mode=mode)
         await self.async_refresh_from_engine()
-
 
     async def async_export_decks(self, include_builtin: bool = False) -> dict[str, Any]:
         return self.deck_manager.export_decks(include_builtin=include_builtin)
@@ -416,7 +413,6 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         raise ValueError("Invalid player session")
 
     def user_can_host(self, user: Any | None) -> bool:
-        """Return whether an authenticated HA user can manage the host UI."""
         if user is None:
             return False
         user_id = str(getattr(user, "id", "") or "").strip()
@@ -426,11 +422,10 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return user_id in self.allowed_host_user_ids
 
     async def async_available_host_users(self) -> list[dict[str, Any]]:
-        """Return Home Assistant users that can be selected as hosts."""
         users: list[dict[str, Any]] = []
         try:
             ha_users = await self.hass.auth.async_get_users()
-        except Exception:  # pragma: no cover - depends on HA auth backend
+        except Exception:
             return users
         for user in ha_users:
             user_id = str(getattr(user, "id", "") or "").strip()
@@ -449,7 +444,6 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return users
 
     async def async_set_allowed_host_users(self, user_ids: list[str]) -> None:
-        """Persist the list of HA users allowed to open host controls."""
         available = await self.async_available_host_users()
         valid_ids = {item["id"] for item in available}
         cleaned: list[str] = []
@@ -662,6 +656,9 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.engine.state.winner_card = None
         self.engine.state.winner_submission_id = None
         self.engine.state.reveal_order = []
+        round_theme = dict(self.engine.state.round_theme or {})
+        round_theme.pop("_trivia_hold_for_manual_next", None)
+        self.engine.state.round_theme = round_theme
         self.engine.set_round_timer(15, time.time() + 15)
         self.last_trivia_results = []
         self._reset_trivia_buzzer_state()
@@ -749,14 +746,21 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.engine.state.winner = ", ".join(correct_players) if correct_players else "No correct answers"
         self.engine.state.winner_card = q.get("correct_answer")
         self.engine.state.winner_submission_id = None
+
+        hold_for_manual_next = self.game_mode == GAME_MODE_TRIVIA and not correct_players
+        round_theme = dict(self.engine.state.round_theme or {})
+        if hold_for_manual_next:
+            round_theme["_trivia_hold_for_manual_next"] = True
+        else:
+            round_theme.pop("_trivia_hold_for_manual_next", None)
+        self.engine.state.round_theme = round_theme
+
         self._record_trivia_results_in_profiles(results)
         self._update_tournament_progress(self.engine.state.winner)
         self._reset_trivia_buzzer_state()
         await self.async_trigger_scene_media_event("winner", self.engine.state.winner)
         await self.async_refresh_from_engine()
-        return {"correct_players": correct_players, "correct_answer": q.get("correct_answer"), "explanation": q.get("explanation", ""), "steal_available": False}
-
-
+        return {"correct_players": correct_players, "correct_answer": q.get("correct_answer"), "explanation": q.get("explanation", ""), "steal_available": False, "hold_for_manual_next": hold_for_manual_next}
 
     async def async_set_trivia_settings(self, *, team_mode: bool | None = None, buzzer_mode: bool | None = None, buzz_bonus: int | None = None, steal_enabled: bool | None = None) -> None:
         if team_mode is not None:
@@ -930,8 +934,8 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @property
     def join_url(self) -> str:
         if not self.base_url:
-            return f"/local/{DOMAIN}/index.modular.html?join={self.join_code}"
-        return f"{self.base_url}/local/{DOMAIN}/index.modular.html?join={self.join_code}"
+            return f"/local/{DOMAIN}/index.html?join={self.join_code}"
+        return f"{self.base_url}/local/{DOMAIN}/index.html?join={self.join_code}"
 
     async def async_register_socket(self, ws: web.WebSocketResponse) -> None:
         self._sockets.add(ws)
@@ -1131,7 +1135,8 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _sync_auto_advance(self) -> None:
         state = self.engine.state
-        if state.state == "results" and state.winner and state.auto_advance_enabled and state.auto_advance_seconds > 0:
+        hold_for_manual_next = bool((state.round_theme or {}).get("_trivia_hold_for_manual_next"))
+        if state.state == "results" and state.winner and state.auto_advance_enabled and state.auto_advance_seconds > 0 and not hold_for_manual_next:
             if self._auto_advance_task is None or self._auto_advance_task.done():
                 self._auto_advance_task = self.hass.async_create_task(self._async_auto_advance_after_delay(state.round_number, state.winner, state.auto_advance_seconds))
         elif self._auto_advance_task and not self._auto_advance_task.done():
@@ -1142,7 +1147,8 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         try:
             await asyncio.sleep(seconds)
             state = self.engine.state
-            if state.state == "results" and state.round_number == round_number and state.winner == winner:
+            hold_for_manual_next = bool((state.round_theme or {}).get("_trivia_hold_for_manual_next"))
+            if state.state == "results" and state.round_number == round_number and state.winner == winner and not hold_for_manual_next:
                 self.engine.next_round()
                 await self.async_refresh_from_engine()
         except asyncio.CancelledError:
@@ -1151,7 +1157,6 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             current = asyncio.current_task()
             if self._auto_advance_task is current:
                 self._auto_advance_task = None
-
 
     def _reset_trivia_buzzer_state(self) -> None:
         self.trivia_buzz_owner = None
@@ -1223,9 +1228,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         team_b = sum(1 for player in self.engine.state.players if player.team == "Team B")
         return "Team A" if team_a <= team_b else "Team B"
 
-
     async def async_apply_options(self, options: dict[str, Any]) -> None:
-        """Apply config-entry options to runtime state."""
         self.entry_options = dict(options)
 
         self.parental_controls = normalize_parental_settings({
@@ -1237,14 +1240,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         })
 
         self.game_mode = options.get(CONF_DEFAULT_GAME_MODE, self.game_mode)
-        remote_base_url = (
-            options.get(CONF_REMOTE_BASE_URL)
-            or self.entry_options.get(CONF_REMOTE_BASE_URL)
-            or self.base_url
-            or DEFAULT_REMOTE_BASE_URL
-            or ""
-        )
-        self.base_url = str(remote_base_url).strip().rstrip("/")
+        self.base_url = (options.get(CONF_REMOTE_BASE_URL, self.base_url or DEFAULT_REMOTE_BASE_URL) or "").rstrip("/")
         self.ai_generator.update_settings(
             enabled=bool(options.get(CONF_AI_ENABLED, self.ai_generator.settings.enabled)),
             endpoint=options.get(CONF_AI_ENDPOINT, self.ai_generator.settings.endpoint),
@@ -1256,7 +1252,6 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_refresh_from_engine()
 
     def options_summary(self) -> dict[str, Any]:
-        """Return a sanitized runtime summary of entry options."""
         return {
             "max_rounds": int(self.entry_options.get(CONF_MAX_ROUNDS, 10)),
             "content_mode": self.parental_controls.get("content_mode"),
