@@ -448,12 +448,36 @@
           hostControls.insertBefore(panel, hostControls.firstChild);
 
           doc.getElementById('enhancedApplyModeBtn').addEventListener('click', async () => {
+            const button = doc.getElementById('enhancedApplyModeBtn');
+            const originalText = button.textContent;
             try {
+              button.disabled = true;
+              button.textContent = 'Please wait…';
               const mode = doc.getElementById('enhancedGameModeSelect').value;
               await win.hostAction('set_game_mode', { game_mode: mode });
-              win.setNotice('hostNotice', 'Game mode updated.', 'success');
+
+              if (mode === 'trivia') {
+                await win.hostAction('set_trivia_settings', {
+                  team_mode: doc.getElementById('enhancedTriviaTeamModeSelect').value === 'true',
+                  buzzer_mode: doc.getElementById('enhancedTriviaBuzzerModeSelect').value === 'true',
+                  buzz_bonus: parseInt(doc.getElementById('enhancedTriviaBuzzBonusInput').value || '1', 10),
+                  steal_enabled: doc.getElementById('enhancedTriviaStealEnabledSelect').value === 'true',
+                  answer_seconds: parseInt(doc.getElementById('enhancedAnswerSecondsInput').value || '15', 10),
+                  reveal_seconds: parseInt(doc.getElementById('enhancedRevealSecondsInput').value || '5', 10),
+                  auto_cycle_enabled: doc.getElementById('enhancedAutoCycleSelect').value === 'true',
+                });
+                await saveVoiceSettings(win, doc);
+              }
+
+              if (typeof win.fetchState === 'function') await win.fetchState().catch(() => {});
+              await loadHostBootstrap(win);
+              if (win.latestState) enhanceUi(win, doc, win.latestState);
+              win.setNotice('hostNotice', 'Game mode settings applied.', 'success');
             } catch (err) {
               win.setNotice('hostNotice', err.message, 'warning');
+            } finally {
+              button.disabled = false;
+              button.textContent = originalText;
             }
           });
 
@@ -668,7 +692,7 @@
         setValue(doc, 'enhancedRevealSecondsInput', trivia.reveal_seconds || 5);
         setValue(doc, 'enhancedAutoCycleSelect', String(trivia.auto_cycle_enabled !== false));
         setValue(doc, 'enhancedTriviaSourceSelect', trivia.source || 'offline_curated');
-        setValue(doc, 'enhancedTriviaCountInput', 25);
+        setValue(doc, 'enhancedTriviaCountInput', trivia.question_count || 25);
         setValue(doc, 'enhancedTriviaAgeRangeSelect', trivia.age_range || '18_plus');
         setValue(doc, 'enhancedTriviaTeamModeSelect', String(Boolean(trivia.team_mode)));
         setValue(doc, 'enhancedTriviaBuzzerModeSelect', String(Boolean(trivia.buzzer_mode)));
