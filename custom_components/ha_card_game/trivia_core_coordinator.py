@@ -9,6 +9,7 @@ import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+
 from .const import DOMAIN, GAME_MODE_TRIVIA, TRIVIA_DIFFICULTY_BY_AGE
 from .coordinator import CardGameCoordinator
 from .moderation import moderate_trivia_questions
@@ -49,7 +50,23 @@ class TriviaCoreCoordinator(CardGameCoordinator):
             return f"/local/{DOMAIN}/index.modular.html?join={self.join_code}"
         return f"{self.base_url}/local/{DOMAIN}/index.modular.html?join={self.join_code}"
 
+    async def async_load(self) -> None:
+        await super().async_load()
+        # Pull persisted trivia runtime settings from the storage payload already loaded by the base coordinator.
+        self.trivia_answer_seconds = max(3, int(self.data.get("trivia_answer_seconds", 15) or 15))
+        self.trivia_reveal_seconds = max(1, int(self.data.get("trivia_reveal_seconds", 5) or 5))
+        self.trivia_auto_cycle_enabled = bool(self.data.get("trivia_auto_cycle_enabled", True))
+        saved_voice = self.data.get("trivia_voice_config") or {}
+        if isinstance(saved_voice, dict):
+            self.trivia_voice_config = {**self.trivia_voice_config, **saved_voice}
+        self._sync_trivia_cycle()
+
     async def async_save(self) -> None:
+        # Ensure these trivia-only fields are part of self.data before the base player_state consumers read them.
+        self.data["trivia_answer_seconds"] = int(self.trivia_answer_seconds)
+        self.data["trivia_reveal_seconds"] = int(self.trivia_reveal_seconds)
+        self.data["trivia_auto_cycle_enabled"] = bool(self.trivia_auto_cycle_enabled)
+        self.data["trivia_voice_config"] = dict(self.trivia_voice_config)
         await super().async_save()
         self._sync_trivia_cycle()
 
@@ -83,6 +100,10 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         trivia["auto_cycle_enabled"] = bool(self.trivia_auto_cycle_enabled)
         trivia["voice"] = dict(self.trivia_voice_config)
         state["trivia"] = trivia
+        state["trivia_answer_seconds"] = int(self.trivia_answer_seconds)
+        state["trivia_reveal_seconds"] = int(self.trivia_reveal_seconds)
+        state["trivia_auto_cycle_enabled"] = bool(self.trivia_auto_cycle_enabled)
+        state["trivia_voice_config"] = dict(self.trivia_voice_config)
         return state
 
     def _cancel_trivia_cycle_task(self) -> None:
@@ -95,6 +116,9 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         return int(getattr(self.trivia, "current_index", -1)) < (
             len(getattr(self.trivia, "questions", [])) - 1
         )
+
+    def _hold_for_manual_next(self) -> bool:
+        return bool((self.engine.state.round_theme or {}).get("_trivia_hold_for_manual_next"))
 
     def _build_trivia_question_announcement(self, question: dict[str, Any]) -> str:
         choices = [str(item).strip() for item in question.get("choices", []) if str(item).strip()]
@@ -154,6 +178,8 @@ class TriviaCoreCoordinator(CardGameCoordinator):
                 return
             if getattr(self.trivia, "current_index", -1) != question_index:
                 return
+            if self._hold_for_manual_next():
+                return
             if not self._questions_remaining_after_current():
                 return
             await self.async_start_trivia_round()
@@ -187,6 +213,7 @@ class TriviaCoreCoordinator(CardGameCoordinator):
             and self.trivia_auto_cycle_enabled
             and self.trivia_reveal_seconds > 0
             and self._questions_remaining_after_current()
+            and not self._hold_for_manual_next()
         ):
             total_delay = float(self.trivia_reveal_seconds) + float(self._trivia_voice_delay_seconds or 0.0)
             self._trivia_cycle_task = self.hass.async_create_task(
@@ -278,21 +305,18 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         if not provider_entity or not speaker_targets:
             return 0.0
 
-        # Conservative estimate used so timers can optionally start after TTS finishes.
         estimated_seconds = max(
             0.0,
             min(
                 20.0,
                 len(message.split()) / max(80, int(self.trivia_voice_config.get("speech_rate_wpm", 155))),
-                ),
+            ),
         ) * 60.0
 
         services = getattr(self.hass, "services", None)
         if not services or not hasattr(services, "async_call"):
             return estimated_seconds
 
-        # Best-effort generic TTS service call. Fail silently so trivia still works even if
-        # provider-specific service details differ.
         for target in speaker_targets:
             try:
                 await services.async_call(
@@ -360,16 +384,6 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         if not category_list:
             category_list = [str(category or "fun_facts").strip() or "fun_facts"]
         category_list = list(dict.fromkeys(category_list))
-
-        if len(category_list) == 1:
-            await super().async_prepare_trivia(
-                category=category_list[0],
-                age_range=age_range,
-                difficulty=difficulty,
-                question_count=question_count,
-                source=source,
-            )
-            return
 
         difficulty_value = difficulty or TRIVIA_DIFFICULTY_BY_AGE.get(age_range, "medium")
         source_value = (source or "ai").strip().lower()
@@ -444,7 +458,7 @@ class TriviaCoreCoordinator(CardGameCoordinator):
 
         self.trivia.load_questions(
             all_questions,
-            category="mixed",
+            category="mixed" if len(category_list) > 1 else category_list[0],
             age_range=age_range,
             difficulty=difficulty_value,
             source=source_value,
@@ -468,6 +482,9 @@ class TriviaCoreCoordinator(CardGameCoordinator):
         self.engine.state.winner_card = None
         self.engine.state.winner_submission_id = None
         self.engine.state.reveal_order = []
+        round_theme = dict(self.engine.state.round_theme or {})
+        round_theme.pop("_trivia_hold_for_manual_next", None)
+        self.engine.state.round_theme = round_theme
         self.engine.clear_round_timer()
         self.last_trivia_results = []
         self._reset_trivia_buzzer_state()

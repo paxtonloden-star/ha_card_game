@@ -48,6 +48,9 @@ from .const import (
     TRIVIA_CATEGORIES,
 )
 
+CONF_TRIVIA_ANSWER_SECONDS = "trivia_answer_seconds"
+CONF_TRIVIA_REVEAL_SECONDS = "trivia_reveal_seconds"
+CONF_TRIVIA_AUTO_CYCLE_ENABLED = "trivia_auto_cycle_enabled"
 
 GAME_MODE_OPTIONS = [GAME_MODE_CARDS, GAME_MODE_JUDGE_PARTY, GAME_MODE_TRIVIA]
 TRIVIA_SOURCE_OPTIONS = ["offline_curated", "ai"]
@@ -92,7 +95,6 @@ class HACardGameConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", data_schema=_user_schema(user_input), errors=errors)
 
     async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Reconfigure the single existing config entry."""
         entries = self.hass.config_entries.async_entries(DOMAIN)
         if not entries:
             return self.async_abort(reason="no_config_entry")
@@ -180,6 +182,9 @@ def _normalize_options(user_input: dict[str, Any], previous: dict[str, Any]) -> 
     normalized[CONF_AI_ENDPOINT] = _normalize_url(merged.get(CONF_AI_ENDPOINT, DEFAULT_AI_ENDPOINT))
     normalized[CONF_REMOTE_BASE_URL] = _normalize_url(merged.get(CONF_REMOTE_BASE_URL, DEFAULT_REMOTE_BASE_URL))
     normalized[CONF_AI_API_KEY] = _normalize_api_key(merged.get(CONF_AI_API_KEY, previous.get(CONF_AI_API_KEY, "")))
+    normalized[CONF_TRIVIA_ANSWER_SECONDS] = max(3, int(merged.get(CONF_TRIVIA_ANSWER_SECONDS, previous.get(CONF_TRIVIA_ANSWER_SECONDS, 15)) or 15))
+    normalized[CONF_TRIVIA_REVEAL_SECONDS] = max(1, int(merged.get(CONF_TRIVIA_REVEAL_SECONDS, previous.get(CONF_TRIVIA_REVEAL_SECONDS, 5)) or 5))
+    normalized[CONF_TRIVIA_AUTO_CYCLE_ENABLED] = bool(merged.get(CONF_TRIVIA_AUTO_CYCLE_ENABLED, previous.get(CONF_TRIVIA_AUTO_CYCLE_ENABLED, True)))
 
     if normalized[CONF_MAX_ROUNDS] < 1 or normalized[CONF_MAX_ROUNDS] > 100:
         raise vol.Invalid("round_range", path=[CONF_MAX_ROUNDS])
@@ -205,6 +210,9 @@ def _normalize_options(user_input: dict[str, Any], previous: dict[str, Any]) -> 
         CONF_AI_API_KEY,
         CONF_AI_ENDPOINT,
         CONF_REMOTE_BASE_URL,
+        CONF_TRIVIA_ANSWER_SECONDS,
+        CONF_TRIVIA_REVEAL_SECONDS,
+        CONF_TRIVIA_AUTO_CYCLE_ENABLED,
     } if key in normalized}
 
 
@@ -275,5 +283,12 @@ def _trivia_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Optional(CONF_ALLOWED_TRIVIA_CATEGORIES, default=defaults.get(CONF_ALLOWED_TRIVIA_CATEGORIES, list(TRIVIA_CATEGORIES))): selector.SelectSelector(
                 selector.SelectSelectorConfig(options=TRIVIA_CATEGORIES, multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)
             ),
+            vol.Optional(CONF_TRIVIA_ANSWER_SECONDS, default=defaults.get(CONF_TRIVIA_ANSWER_SECONDS, 15)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=3, max=120, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional(CONF_TRIVIA_REVEAL_SECONDS, default=defaults.get(CONF_TRIVIA_REVEAL_SECONDS, 5)): selector.NumberSelector(
+                selector.NumberSelectorConfig(min=1, max=60, mode=selector.NumberSelectorMode.BOX)
+            ),
+            vol.Optional(CONF_TRIVIA_AUTO_CYCLE_ENABLED, default=defaults.get(CONF_TRIVIA_AUTO_CYCLE_ENABLED, True)): selector.BooleanSelector(),
         }
     )
