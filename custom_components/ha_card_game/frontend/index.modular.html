@@ -25,6 +25,7 @@
       let triviaPaused = false;
       let triviaAutoAdvanceTimer = null;
       let triviaAutoAdvanceKey = '';
+      let hostActionInFlight = false;
 
       function markHostEditing(ms = 5000) {
         hostEditing = true;
@@ -39,11 +40,12 @@
       }
 
       function shouldSkipSync(doc) {
+        if (hostActionInFlight) return true;
         if (!hostEditing && Date.now() >= hostEditUntil) return false;
         const active = doc?.activeElement;
-        if (!active) return false;
+        if (!active) return hostEditing || Date.now() < hostEditUntil;
         const tag = (active.tagName || '').toLowerCase();
-        return tag === 'input' || tag === 'select' || tag === 'textarea';
+        return tag === 'input' || tag === 'select' || tag === 'textarea' || hostEditing || Date.now() < hostEditUntil;
       }
 
       function wireHostEditingGuards(doc) {
@@ -289,6 +291,54 @@
         return JSON.parse(raw);
       }
 
+      async function runHostAction(win, action, payload = {}, holdMs = 2200) {
+        hostActionInFlight = true;
+        markHostEditing(Math.max(holdMs, 2200));
+        try {
+          return await win.hostAction(action, payload);
+        } finally {
+          window.setTimeout(() => {
+            hostActionInFlight = false;
+            clearHostEditingSoon(1200);
+          }, holdMs);
+        }
+      }
+
+      function ensureRoomInfoPanel(win, doc, state) {
+        const hostControls = doc.getElementById('hostControls');
+        if (!hostControls) return;
+        let panel = doc.getElementById('enhancedRoomInfoCard');
+        if (!panel) {
+          panel = doc.createElement('div');
+          panel.id = 'enhancedRoomInfoCard';
+          panel.className = 'card';
+          panel.innerHTML = `
+            <h3 style="margin-top:0;">Room & join info</h3>
+            <div class="subgrid">
+              <div>
+                <label class="label">Join code</label>
+                <div id="enhancedJoinCodeText" class="pill-note host-room-pill"></div>
+              </div>
+              <div>
+                <label class="label">Room URL</label>
+                <div id="enhancedJoinUrlText" class="pill-note host-room-pill"></div>
+              </div>
+              <div style="grid-column:1 / -1;">
+                <label class="label">QR URL</label>
+                <div id="enhancedQrUrlText" class="pill-note host-room-pill"></div>
+              </div>
+            </div>
+          `;
+          hostControls.insertBefore(panel, hostControls.firstChild);
+        }
+        const codeEl = doc.getElementById('enhancedJoinCodeText');
+        const urlEl = doc.getElementById('enhancedJoinUrlText');
+        const qrEl = doc.getElementById('enhancedQrUrlText');
+        if (codeEl) codeEl.textContent = state?.join_code || 'Unavailable';
+        if (urlEl) urlEl.textContent = state?.join_url || state?.remote_join_url || 'Unavailable';
+        if (qrEl) qrEl.textContent = state?.qr_url || 'Unavailable';
+      }
+
       function ensureHostModePanel(win, doc, state) {
         const hostControls = doc.getElementById('hostControls');
         if (!hostControls) return;
@@ -454,7 +504,7 @@
               button.disabled = true;
               button.textContent = 'Please wait…';
               const mode = doc.getElementById('enhancedGameModeSelect').value;
-              await win.hostAction('set_game_mode', { game_mode: mode });
+              await runHostAction(win, 'set_game_mode', { game_mode: mode });
 
               if (mode === 'trivia') {
                 await win.hostAction('set_trivia_settings', {
@@ -571,7 +621,7 @@
               const categories = Array.from(categorySelect.selectedOptions || []).map((option) => option.value).filter(Boolean);
               const ageRange = doc.getElementById('enhancedTriviaAgeRangeSelect').value || '18_plus';
               const questionCount = parseInt(doc.getElementById('enhancedTriviaCountInput').value || '25', 10);
-              await win.hostAction('set_game_mode', { game_mode: 'trivia' });
+              await runHostAction(win, 'set_game_mode', { game_mode: 'trivia' });
               await saveVoiceSettings(win, doc);
               await win.hostAction('set_trivia_settings', {
                 team_mode: doc.getElementById('enhancedTriviaTeamModeSelect').value === 'true',
@@ -582,7 +632,7 @@
                 reveal_seconds: parseInt(doc.getElementById('enhancedRevealSecondsInput').value || '5', 10),
                 auto_cycle_enabled: doc.getElementById('enhancedAutoCycleSelect').value === 'true',
               });
-              await win.hostAction('prepare_trivia', {
+              await runHostAction(win, 'prepare_trivia', {
                 categories,
                 category: categories[0] || 'fun_facts',
                 age_range: ageRange,
@@ -615,7 +665,7 @@
               const ageRange = doc.getElementById('enhancedTriviaAgeRangeSelect').value || '18_plus';
               const questionCount = parseInt(doc.getElementById('enhancedTriviaCountInput').value || '25', 10);
               const aiTheme = (doc.getElementById('enhancedAiTriviaThemeInput').value || '').trim();
-              await win.hostAction('set_game_mode', { game_mode: 'trivia' });
+              await runHostAction(win, 'set_game_mode', { game_mode: 'trivia' });
               await saveVoiceSettings(win, doc);
               await win.hostAction('set_trivia_settings', {
                 team_mode: doc.getElementById('enhancedTriviaTeamModeSelect').value === 'true',
@@ -626,7 +676,7 @@
                 reveal_seconds: parseInt(doc.getElementById('enhancedRevealSecondsInput').value || '5', 10),
                 auto_cycle_enabled: doc.getElementById('enhancedAutoCycleSelect').value === 'true',
               });
-              await win.hostAction('prepare_trivia', {
+              await runHostAction(win, 'prepare_trivia', {
                 categories,
                 category: categories[0] || aiTheme || 'fun_facts',
                 age_range: ageRange,
@@ -649,9 +699,9 @@
 
           doc.getElementById('enhancedStartTriviaBtn').addEventListener('click', async () => {
             try {
-              await win.hostAction('set_game_mode', { game_mode: 'trivia' });
+              await runHostAction(win, 'set_game_mode', { game_mode: 'trivia' });
               await saveVoiceSettings(win, doc);
-              await win.hostAction('start_trivia_round');
+              await runHostAction(win, 'start_trivia_round');
               if (typeof win.fetchState === 'function') await win.fetchState().catch(() => {});
               win.setNotice('hostExtraNotice', 'Trivia round started.', 'success');
             } catch (err) {
@@ -663,7 +713,7 @@
             const button = doc.getElementById('enhancedPauseTriviaBtn');
             try {
               triviaPaused = !triviaPaused;
-              await win.hostAction('set_trivia_settings', { auto_cycle_enabled: !triviaPaused });
+              await runHostAction(win, 'set_trivia_settings', { auto_cycle_enabled: !triviaPaused });
               button.classList.toggle('paused', triviaPaused);
               button.textContent = triviaPaused ? 'Resume auto next' : 'Pause auto next';
               win.setNotice('hostExtraNotice', triviaPaused ? 'Auto next paused.' : 'Auto next resumed.', 'success');
@@ -703,7 +753,7 @@
         if (categorySelect) {
           const options = getTriviaCategoryOptions(win, doc);
           const remembered = JSON.parse(win.localStorage.getItem('ha_card_game_selected_categories') || '[]');
-          const fallbackSelected = [trivia.category].filter(Boolean);
+          const fallbackSelected = [trivia.category, ...(trivia.custom_packs || []).map((pack) => pack.slug)].filter(Boolean);
           const selectedSet = new Set((remembered.length ? remembered : fallbackSelected).filter(Boolean));
           const customPacks = [
             ...(state?.trivia?.custom_packs || []),
@@ -726,7 +776,10 @@
           value: item.entity_id,
           label: item.name || item.entity_id,
         }));
-        fillSelectOptions(doc.getElementById('enhancedTtsProviderSelect'), providerOptions, 'value', 'label', true, 'Choose provider...');
+        if (voice.provider_entity && !providerOptions.some((item) => item.value === voice.provider_entity)) {
+          providerOptions.unshift({ value: voice.provider_entity, label: `${voice.provider_entity} (current)` });
+        }
+        fillSelectOptions(doc.getElementById('enhancedTtsProviderSelect'), providerOptions, 'value', 'label', true, providerOptions.length ? 'Choose provider...' : 'No providers found');
         setValue(doc, 'enhancedTtsEnabledSelect', String(Boolean(voice.enabled)));
         setValue(doc, 'enhancedTtsProviderSelect', voice.provider_entity || '');
         setValue(doc, 'enhancedTtsVoiceInput', voice.voice || '');
@@ -735,7 +788,13 @@
         setValue(doc, 'enhancedTimerAfterVoiceSelect', String(voice.start_timer_after_voice !== false));
         setValue(doc, 'enhancedAnnounceAnswersSelect', String(voice.announce_answers !== false));
         setValue(doc, 'enhancedAnnouncePlayersSelect', String(voice.announce_correct_players !== false));
-        fillMultiSelectOptions(doc.getElementById('enhancedTtsTargetsSelect'), (win.hostBootstrap?.host?.trivia?.speaker_targets) || [], voice.speaker_targets || []);
+        const speakerOptions = [...((win.hostBootstrap?.host?.trivia?.speaker_targets) || [])];
+        for (const entityId of (voice.speaker_targets || [])) {
+          if (entityId && !speakerOptions.some((item) => item.entity_id === entityId)) {
+            speakerOptions.unshift({ entity_id: entityId, name: `${entityId} (current)` });
+          }
+        }
+        fillMultiSelectOptions(doc.getElementById('enhancedTtsTargetsSelect'), speakerOptions, voice.speaker_targets || []);
 
         const pauseBtn = doc.getElementById('enhancedPauseTriviaBtn');
         if (pauseBtn) {
@@ -782,7 +841,7 @@
         hostControls.classList.toggle('cards-mode', mode === 'cards');
         hostControls.classList.toggle('judge-party-mode', mode === 'judge_party');
         const accessSection = doc.getElementById('hostSection-access');
-        if (accessSection) accessSection.dataset.hidden = triviaMode ? 'true' : 'false';
+        if (accessSection) accessSection.dataset.hidden = 'false';
         const advancedSection = doc.getElementById('hostSection-advanced');
         if (advancedSection) advancedSection.dataset.hidden = 'false';
         const playersSection = doc.getElementById('hostSection-players');
@@ -823,7 +882,7 @@
               const currentKey = [current?.round_number || 0, current?.state || '', current?.winner || '', currentTrivia.current_index ?? -1, Number(currentTrivia.reveal_seconds || 0)].join('|');
               if (currentKey !== key) return;
               if (typeof win?.hostAction === 'function') {
-                await win.hostAction('start_trivia_round');
+                await runHostAction(win, 'start_trivia_round');
                 if (typeof win?.fetchState === 'function') await win.fetchState().catch(() => {});
               }
             } catch (_err) {
@@ -844,6 +903,7 @@
         ensurePromptCard(win, doc, state);
         ensureTriviaQuestionPrompt(win, doc, state);
         enhanceHandCards(win, doc, state);
+        ensureRoomInfoPanel(win, doc, state);
         ensureHostModePanel(win, doc, state);
         arrangeHostSections(doc, state);
 
@@ -901,6 +961,7 @@
           #enhancedTriviaImportNotice { min-height: 18px; }
           #enhancedPauseTriviaBtn.paused { background: rgba(245,158,11,.18); border-color: rgba(245,158,11,.35); }
           .pill-note, #enhancedTtsNotice { font-size: 12px; opacity: .75; margin-top: 6px; }
+          .host-room-pill { font-size: 13px; opacity: .95; word-break: break-all; padding: 8px 10px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; min-height: 18px; }
 
           /* Player view cleanup */
           #hostPanel, #roomPanel, #roomCard, #hostCard, .host-card, .room-card {
