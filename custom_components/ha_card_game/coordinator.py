@@ -57,6 +57,20 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.trivia_steal_active = False
         self.trivia_steal_team: str | None = None
         self.trivia_steal_from_player: str | None = None
+        self.trivia_answer_seconds = 15
+        self.trivia_reveal_seconds = 5
+        self.trivia_auto_cycle_enabled = True
+        self.trivia_voice_config: dict[str, Any] = {
+            "enabled": False,
+            "provider_entity": "",
+            "speaker_targets": [],
+            "voice": "",
+            "language": "",
+            "announce_answers": True,
+            "announce_correct_players": True,
+            "start_timer_after_voice": True,
+            "speech_rate_wpm": 155,
+        }
         self.parental_controls = normalize_parental_settings(DEFAULT_PARENTAL_CONTROLS)
         self.ai_moderation_queue: list[dict[str, Any]] = []
         self.player_profiles: dict[str, dict[str, Any]] = {}
@@ -154,6 +168,10 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.trivia_steal_active = bool(saved.get("trivia_steal_active", False))
             self.trivia_steal_team = saved.get("trivia_steal_team")
             self.trivia_steal_from_player = saved.get("trivia_steal_from_player")
+            self.trivia_answer_seconds = max(3, int(saved.get("trivia_answer_seconds", 15)))
+            self.trivia_reveal_seconds = max(1, int(saved.get("trivia_reveal_seconds", 5)))
+            self.trivia_auto_cycle_enabled = bool(saved.get("trivia_auto_cycle_enabled", True))
+            self.trivia_voice_config = {**self.trivia_voice_config, **dict(saved.get("trivia_voice_config", {}))}
             self.trivia.load_questions(saved.get("trivia_questions", []), category=saved.get("trivia_category", "fun_facts"), age_range=saved.get("trivia_age_range", "18_plus"), difficulty=saved.get("trivia_difficulty", "medium"), source=saved.get("trivia_source", "ai"))
             self.trivia.current_index = int(saved.get("trivia_current_index", -1))
             ai_saved = saved.get("ai_settings", {})
@@ -212,6 +230,10 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "trivia_steal_active": self.trivia_steal_active,
             "trivia_steal_team": self.trivia_steal_team,
             "trivia_steal_from_player": self.trivia_steal_from_player,
+            "trivia_answer_seconds": self.trivia_answer_seconds,
+            "trivia_reveal_seconds": self.trivia_reveal_seconds,
+            "trivia_auto_cycle_enabled": self.trivia_auto_cycle_enabled,
+            "trivia_voice_config": deepcopy(self.trivia_voice_config),
             "last_trivia_results": list(self.last_trivia_results),
             "remote_base_url": self.base_url,
             "allowed_host_user_ids": list(self.allowed_host_user_ids),
@@ -483,6 +505,10 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "source_options": ["ai", "offline_curated"],
             "offline_pack_categories": self._available_offline_trivia_categories(),
             "custom_packs": self._custom_trivia_pack_summaries(),
+            "answer_seconds": self.trivia_answer_seconds,
+            "reveal_seconds": self.trivia_reveal_seconds,
+            "auto_cycle_enabled": self.trivia_auto_cycle_enabled,
+            "voice": dict(self.trivia_voice_config),
         }
         state["remote_join_url"] = self.join_url
         state["remote_enabled"] = bool(self.base_url)
@@ -616,30 +642,81 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_refresh_from_engine()
         return deck.as_dict()
 
-    async def async_prepare_trivia(self, *, category: str, age_range: str, difficulty: str | None = None, question_count: int = 10, source: str = "ai") -> None:
+    async def async_prepare_trivia(self, *, category: str, age_range: str, difficulty: str | None = None, question_count: int = 10, source: str = "ai", categories: list[str] | None = None) -> None:
         difficulty = difficulty or TRIVIA_DIFFICULTY_BY_AGE.get(age_range, "medium")
+        requested_categories = [str(item).strip() for item in (categories or []) if str(item).strip()]
+        if not requested_categories and category:
+            requested_categories = [category]
+
         if self.parental_controls.get("enabled"):
             allowed_categories = set(self.parental_controls.get("allowed_trivia_categories", []))
-            if category not in allowed_categories and category not in self.custom_trivia_packs:
-                raise ValueError("That trivia category is blocked by parental controls")
+            for requested in requested_categories:
+                if requested not in allowed_categories and requested not in self.custom_trivia_packs:
+                    raise ValueError("That trivia category is blocked by parental controls")
+
         source = (source or "ai").strip().lower()
-        if source == "offline_curated":
-            if category in self.custom_trivia_packs:
-                questions = self._get_custom_trivia_questions(category=category, age_range=age_range, difficulty=difficulty, question_count=question_count)
+        merged_questions: list[dict[str, Any]] = []
+        categories_to_load = requested_categories or [category]
+
+        for requested in categories_to_load:
+            if source == "offline_curated":
+                if requested in self.custom_trivia_packs:
+                    batch = self._get_custom_trivia_questions(
+                        category=requested,
+                        age_range=age_range,
+                        difficulty=difficulty,
+                        question_count=question_count,
+                    )
+                else:
+                    batch = get_curated_trivia_questions(
+                        category=requested,
+                        age_range=age_range,
+                        difficulty=difficulty,
+                        question_count=question_count,
+                    )
             else:
-                questions = get_curated_trivia_questions(category=category, age_range=age_range, difficulty=difficulty, question_count=question_count)
-        else:
-            questions = await self.ai_generator.generate_trivia(category=category, age_range=age_range, difficulty=difficulty, question_count=question_count)
-        moderation_issues: list[dict[str, Any]] = []
-        if self.parental_controls.get("enabled"):
-            questions, moderation_issues = moderate_trivia_questions(questions, content_mode=self.parental_controls.get("content_mode", "family_safe"))
-        if not questions:
-            raise ValueError("AI trivia was filtered by parental controls and no usable questions remain")
-        if source != "offline_curated" and self.parental_controls.get("enabled") and self.parental_controls.get("require_ai_approval"):
-            self._queue_ai_item("trivia", f"{category.title()} trivia", {"questions": questions, "category": category, "age_range": age_range, "difficulty": difficulty}, f"{len(questions)} questions in {category}", moderation_issues)
-            await self.async_refresh_from_engine()
-            return
-        self.trivia.load_questions(questions, category=category, age_range=age_range, difficulty=difficulty, source=source)
+                batch = await self.ai_generator.generate_trivia(
+                    category=requested,
+                    age_range=age_range,
+                    difficulty=difficulty,
+                    question_count=question_count,
+                )
+
+            moderation_issues: list[dict[str, Any]] = []
+            if self.parental_controls.get("enabled"):
+                batch, moderation_issues = moderate_trivia_questions(
+                    batch,
+                    content_mode=self.parental_controls.get("content_mode", "family_safe"),
+                )
+
+            if not batch:
+                continue
+
+            if source != "offline_curated" and self.parental_controls.get("enabled") and self.parental_controls.get("require_ai_approval"):
+                self._queue_ai_item(
+                    "trivia",
+                    f"{requested.title()} trivia",
+                    {"questions": batch, "category": requested, "age_range": age_range, "difficulty": difficulty},
+                    f"{len(batch)} questions in {requested}",
+                    moderation_issues,
+                )
+                await self.async_refresh_from_engine()
+                return
+
+            merged_questions.extend(batch)
+
+        if not merged_questions:
+            raise ValueError("No usable trivia questions remain after filtering")
+
+        merged_questions = merged_questions[: max(1, int(question_count))]
+        loaded_category = ",".join(categories_to_load[:4]) if categories_to_load else category
+        self.trivia.load_questions(
+            merged_questions,
+            category=loaded_category,
+            age_range=age_range,
+            difficulty=difficulty,
+            source=source,
+        )
         self.game_mode = GAME_MODE_TRIVIA
         self.last_trivia_results = []
         self._reset_trivia_buzzer_state()
@@ -659,7 +736,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         round_theme = dict(self.engine.state.round_theme or {})
         round_theme.pop("_trivia_hold_for_manual_next", None)
         self.engine.state.round_theme = round_theme
-        self.engine.set_round_timer(15, time.time() + 15)
+        self.engine.set_round_timer(self.trivia_answer_seconds, time.time() + self.trivia_answer_seconds)
         self.last_trivia_results = []
         self._reset_trivia_buzzer_state()
         for player in self.engine.state.players:
@@ -762,7 +839,7 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_refresh_from_engine()
         return {"correct_players": correct_players, "correct_answer": q.get("correct_answer"), "explanation": q.get("explanation", ""), "steal_available": False, "hold_for_manual_next": hold_for_manual_next}
 
-    async def async_set_trivia_settings(self, *, team_mode: bool | None = None, buzzer_mode: bool | None = None, buzz_bonus: int | None = None, steal_enabled: bool | None = None) -> None:
+    async def async_set_trivia_settings(self, *, team_mode: bool | None = None, buzzer_mode: bool | None = None, buzz_bonus: int | None = None, steal_enabled: bool | None = None, answer_seconds: int | None = None, reveal_seconds: int | None = None, auto_cycle_enabled: bool | None = None) -> None:
         if team_mode is not None:
             self.trivia_team_mode = bool(team_mode)
             if self.trivia_team_mode:
@@ -777,6 +854,14 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.trivia_buzz_bonus = max(0, int(buzz_bonus))
         if steal_enabled is not None:
             self.trivia_steal_enabled = bool(steal_enabled)
+        if answer_seconds is not None:
+            self.trivia_answer_seconds = max(3, int(answer_seconds))
+            if self.game_mode == GAME_MODE_TRIVIA and self.engine.state.state == "submitting":
+                self.engine.set_round_timer(self.trivia_answer_seconds, time.time() + self.trivia_answer_seconds)
+        if reveal_seconds is not None:
+            self.trivia_reveal_seconds = max(1, int(reveal_seconds))
+        if auto_cycle_enabled is not None:
+            self.trivia_auto_cycle_enabled = bool(auto_cycle_enabled)
         self._reset_trivia_buzzer_state()
         await self.async_refresh_from_engine()
 
@@ -1284,3 +1369,49 @@ class CardGameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _generate_token(self, length: int) -> str:
         return secrets.token_urlsafe(length)
+
+
+    async def async_available_tts_providers(self) -> list[dict[str, str]]:
+        states = getattr(self.hass, "states", None)
+        if states is None:
+            return []
+        results: list[dict[str, str]] = []
+        for state in states.async_all():
+            entity_id = str(getattr(state, "entity_id", "") or "")
+            if entity_id.startswith("tts."):
+                results.append({"entity_id": entity_id, "name": str(getattr(state, "name", None) or entity_id)})
+        results.sort(key=lambda item: item["name"].lower())
+        return results
+
+    async def async_available_speakers(self) -> list[dict[str, str]]:
+        states = getattr(self.hass, "states", None)
+        if states is None:
+            return []
+        results: list[dict[str, str]] = []
+        for state in states.async_all():
+            entity_id = str(getattr(state, "entity_id", "") or "")
+            if entity_id.startswith("media_player."):
+                results.append({"entity_id": entity_id, "name": str(getattr(state, "name", None) or entity_id)})
+        results.sort(key=lambda item: item["name"].lower())
+        return results
+
+    async def async_set_trivia_voice_config(self, *, enabled: bool | None = None, provider_entity: str | None = None, speaker_targets: list[str] | None = None, voice: str | None = None, language: str | None = None, announce_answers: bool | None = None, announce_correct_players: bool | None = None, start_timer_after_voice: bool | None = None, speech_rate_wpm: int | None = None) -> None:
+        if enabled is not None:
+            self.trivia_voice_config["enabled"] = bool(enabled)
+        if provider_entity is not None:
+            self.trivia_voice_config["provider_entity"] = str(provider_entity or "").strip()
+        if speaker_targets is not None:
+            self.trivia_voice_config["speaker_targets"] = [str(item).strip() for item in speaker_targets if str(item).strip()]
+        if voice is not None:
+            self.trivia_voice_config["voice"] = str(voice or "").strip()
+        if language is not None:
+            self.trivia_voice_config["language"] = str(language or "").strip()
+        if announce_answers is not None:
+            self.trivia_voice_config["announce_answers"] = bool(announce_answers)
+        if announce_correct_players is not None:
+            self.trivia_voice_config["announce_correct_players"] = bool(announce_correct_players)
+        if start_timer_after_voice is not None:
+            self.trivia_voice_config["start_timer_after_voice"] = bool(start_timer_after_voice)
+        if speech_rate_wpm is not None:
+            self.trivia_voice_config["speech_rate_wpm"] = max(80, min(260, int(speech_rate_wpm)))
+        await self.async_refresh_from_engine()
