@@ -141,6 +141,122 @@
         return `${minutes}:${seconds}`;
       }
 
+      function getCurrentPlayerFromState(state) {
+        const playerName = String(state?.player_name || '').trim();
+        const players = Array.isArray(state?.players) ? state.players : [];
+        const current = players.find((player) => String(player?.name || '').trim() === playerName);
+        return current || null;
+      }
+
+      function getPlayerAvatarMarkup(state) {
+        const playerName = String(state?.player_name || 'Player').trim() || 'Player';
+        const initials = playerName.split(/\s+/).slice(0, 2).map((part) => part[0] || '').join('').toUpperCase() || 'P';
+        return `<div class="trivia-avatar-fallback">${initials}</div>`;
+      }
+
+      function ensureTriviaShowFrame(win, doc, state) {
+        const submitPanel = doc.getElementById('submitPanel');
+        const handList = doc.getElementById('handList');
+        if (!submitPanel || !handList) return null;
+
+        let frame = doc.getElementById('triviaShowFrame');
+        if (!frame) {
+          frame = doc.createElement('section');
+          frame.id = 'triviaShowFrame';
+          frame.innerHTML = `
+            <div class="trivia-show-marquee">
+              <div class="trivia-show-title">Trivia Mode</div>
+            </div>
+            <div class="trivia-show-topbar">
+              <div class="trivia-player-badge">
+                <div class="trivia-player-avatar" id="triviaPlayerAvatar"></div>
+                <div class="trivia-player-meta">
+                  <div class="trivia-player-name" id="triviaPlayerName">Player</div>
+                  <div class="trivia-player-score">Score <span id="triviaPlayerScore">0</span></div>
+                </div>
+              </div>
+              <div class="trivia-timer-dial">
+                <div class="trivia-timer-label">Time</div>
+                <div class="trivia-timer-value" id="triviaTimerDialValue">0</div>
+                <div class="trivia-timer-unit">sec</div>
+              </div>
+            </div>
+            <div class="trivia-question-stage" id="triviaQuestionStage"></div>
+            <div class="trivia-answer-grid-shell">
+              <div class="trivia-answer-grid-title">Select Your Answer</div>
+            </div>
+            <div class="trivia-progress-strip">
+              <div class="trivia-progress-text" id="triviaProgressText">Question 1</div>
+              <div class="trivia-progress-dots" id="triviaProgressDots"></div>
+            </div>
+          `;
+          submitPanel.insertBefore(frame, handList);
+        }
+
+        frame.style.display = state?.game_mode === 'trivia' ? '' : 'none';
+        const current = getCurrentPlayerFromState(state);
+        const avatar = doc.getElementById('triviaPlayerAvatar');
+        const playerName = doc.getElementById('triviaPlayerName');
+        const playerScore = doc.getElementById('triviaPlayerScore');
+        if (avatar) avatar.innerHTML = getPlayerAvatarMarkup(state);
+        if (playerName) playerName.textContent = String(state?.player_name || 'Player');
+        if (playerScore) playerScore.textContent = String(current?.score ?? 0);
+
+        const questionStage = doc.getElementById('triviaQuestionStage');
+        if (questionStage) {
+          const questionText = state?.trivia?.current_question?.question || state?.current_prompt || 'Waiting for the next trivia question…';
+          questionStage.innerHTML = `<div class="trivia-question-stars">★ ★ ★</div><div class="trivia-question-text">Q: ${questionText}</div><div class="trivia-question-subline">Choose the best answer below</div>`;
+        }
+
+        const progressText = doc.getElementById('triviaProgressText');
+        const progressDots = doc.getElementById('triviaProgressDots');
+        const currentIndex = Number(state?.trivia?.current_index ?? -1);
+        const totalQuestions = Array.isArray(state?.trivia?.questions) ? state.trivia.questions.length : 0;
+        if (progressText) {
+          progressText.textContent = `Question ${Math.max(1, currentIndex + 1)} of ${Math.max(1, totalQuestions || 1)}`;
+        }
+        if (progressDots) {
+          const total = Math.max(1, Math.min(10, totalQuestions || 10));
+          const active = Math.max(0, currentIndex + 1);
+          progressDots.innerHTML = Array.from({ length: total }, (_, idx) => {
+            const num = idx + 1;
+            const cls = num < active ? 'done' : num === active ? 'active' : '';
+            return `<span class="trivia-progress-dot ${cls}">${num}</span>`;
+          }).join('');
+        }
+
+        return frame;
+      }
+
+      function applyTriviaShowAnswerTheme(win, doc, state) {
+        const handList = doc.getElementById('handList');
+        if (!handList) return;
+        const isTrivia = state?.game_mode === 'trivia';
+        handList.classList.toggle('trivia-answer-grid', isTrivia);
+        Array.from(handList.children || []).forEach((card, index) => {
+          if (!(card instanceof HTMLElement)) return;
+          if (!isTrivia) {
+            card.classList.remove('trivia-answer-card');
+            const badge = card.querySelector('.trivia-answer-badge'); if (badge) badge.remove();
+            const textNode = card.querySelector('.trivia-answer-text');
+            if (textNode) card.textContent = textNode.textContent || '';
+            return;
+          }
+          const selected = card.classList.contains('selected') || card.getAttribute('aria-pressed') === 'true';
+          const originalText = (card.dataset.cardText || card.textContent || '').trim();
+          const badgeLetter = ['A','B','C','D','E','F'][index] || String(index + 1);
+          card.dataset.cardText = originalText;
+          card.classList.add('trivia-answer-card');
+          card.classList.toggle('selected', selected);
+          card.innerHTML = `<span class="trivia-answer-badge">${badgeLetter}</span><span class="trivia-answer-text">${originalText}</span>`;
+        });
+
+        const gridShell = doc.querySelector('.trivia-answer-grid-shell');
+        if (gridShell && handList.parentElement !== gridShell.parentElement) {
+          gridShell.after(handList);
+        }
+      }
+
       function renderQuestionTimer(win, doc, state) {
         const badge = doc.getElementById('triviaQuestionTimerBadge');
         const note = doc.getElementById('triviaQuestionTimerNote');
@@ -152,6 +268,11 @@
         note.style.display = isTrivia ? '' : 'none';
         if (!isTrivia) return;
         badge.textContent = formatTimerValue(totalSeconds, endsAt);
+        const dial = doc.getElementById('triviaTimerDialValue');
+        if (dial) {
+          const remaining = endsAt ? Math.max(0, Math.ceil(endsAt - Date.now() / 1000)) : 0;
+          dial.textContent = String(remaining || totalSeconds || 0);
+        }
         const remaining = endsAt ? Math.max(0, Math.ceil(endsAt - Date.now() / 1000)) : 0;
         badge.classList.toggle('warning', remaining <= 15 && remaining > 5);
         badge.classList.toggle('danger', remaining <= 5 && remaining >= 0);
@@ -902,7 +1023,9 @@
 
         ensurePromptCard(win, doc, state);
         ensureTriviaQuestionPrompt(win, doc, state);
+        ensureTriviaShowFrame(win, doc, state);
         enhanceHandCards(win, doc, state);
+        applyTriviaShowAnswerTheme(win, doc, state);
         ensureRoomInfoPanel(win, doc, state);
         ensureHostModePanel(win, doc, state);
         arrangeHostSections(doc, state);
@@ -962,6 +1085,316 @@
           #enhancedPauseTriviaBtn.paused { background: rgba(245,158,11,.18); border-color: rgba(245,158,11,.35); }
           .pill-note, #enhancedTtsNotice { font-size: 12px; opacity: .75; margin-top: 6px; }
           .host-room-pill { font-size: 13px; opacity: .95; word-break: break-all; padding: 8px 10px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); border-radius: 10px; min-height: 18px; }
+
+          /* Trivia game-show player theme */
+          #triviaShowFrame {
+            display: none;
+            position: relative;
+            margin-bottom: 14px;
+            padding: 22px 22px 18px;
+            border-radius: 26px;
+            border: 3px solid rgba(255, 183, 0, 0.55);
+            background:
+              radial-gradient(circle at top center, rgba(255,231,170,.25), transparent 22%),
+              linear-gradient(180deg, rgba(27,17,9,.96) 0%, rgba(9,10,22,.98) 100%);
+            box-shadow:
+              0 0 0 3px rgba(255,183,0,.14),
+              0 0 35px rgba(255,166,0,.18),
+              inset 0 0 0 1px rgba(255,255,255,.04),
+              0 22px 50px rgba(0,0,0,.42);
+            overflow: hidden;
+          }
+          #triviaShowFrame::before {
+            content: '';
+            position: absolute;
+            inset: 10px;
+            border-radius: 20px;
+            pointer-events: none;
+            box-shadow: inset 0 0 0 2px rgba(255,214,102,.16);
+          }
+          #triviaShowFrame::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background:
+              radial-gradient(circle, rgba(255,191,0,.85) 0 3px, transparent 4px) 12px 12px / 32px 32px repeat-x,
+              radial-gradient(circle, rgba(255,191,0,.85) 0 3px, transparent 4px) 12px calc(100% - 12px) / 32px 32px repeat-x,
+              radial-gradient(circle, rgba(255,191,0,.85) 0 3px, transparent 4px) 12px 12px / 32px 32px repeat-y,
+              radial-gradient(circle, rgba(255,191,0,.85) 0 3px, transparent 4px) calc(100% - 12px) 12px / 32px 32px repeat-y;
+            opacity: .9;
+          }
+          .trivia-show-marquee {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 14px;
+          }
+          .trivia-show-title {
+            padding: 12px 28px;
+            border-radius: 20px 20px 26px 26px;
+            border: 3px solid rgba(255,194,73,.6);
+            background: linear-gradient(180deg, #24160b 0%, #090b16 100%);
+            color: #ffd76d;
+            font-weight: 900;
+            font-size: clamp(28px, 4vw, 54px);
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            text-shadow: 0 0 18px rgba(255,174,0,.25), 0 2px 0 rgba(0,0,0,.35);
+            box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.05);
+          }
+          .trivia-show-topbar {
+            display: grid;
+            grid-template-columns: minmax(220px, 320px) minmax(120px, 170px);
+            justify-content: space-between;
+            gap: 18px;
+            align-items: start;
+            margin-bottom: 18px;
+          }
+          .trivia-player-badge {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 14px;
+            border-radius: 20px;
+            background: linear-gradient(180deg, rgba(24,24,30,.98), rgba(5,6,15,.96));
+            border: 2px solid rgba(255,190,64,.48);
+            box-shadow: 0 10px 22px rgba(0,0,0,.28);
+          }
+          .trivia-player-avatar {
+            width: 88px;
+            height: 88px;
+            border-radius: 999px;
+            background: radial-gradient(circle at 35% 30%, #fff4c2, #ffc94d 32%, #ee8f00 60%, #4d2900 100%);
+            padding: 4px;
+            box-shadow: 0 0 0 3px rgba(255,198,78,.25), 0 0 22px rgba(255,170,0,.18);
+            display: grid;
+            place-items: center;
+            overflow: hidden;
+          }
+          .trivia-avatar-fallback {
+            width: 100%;
+            height: 100%;
+            border-radius: 999px;
+            display: grid;
+            place-items: center;
+            background: radial-gradient(circle at 30% 30%, #2f2f3c, #0b0d18);
+            color: #fff6d0;
+            font-size: 30px;
+            font-weight: 900;
+            letter-spacing: .06em;
+          }
+          .trivia-player-meta { min-width: 0; }
+          .trivia-player-name {
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+          }
+          .trivia-player-score {
+            margin-top: 6px;
+            color: #ffcb4b;
+            font-size: 15px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+          }
+          .trivia-player-score span {
+            color: #ffffff;
+            font-size: 24px;
+            margin-left: 8px;
+          }
+          .trivia-timer-dial {
+            justify-self: end;
+            width: 138px;
+            height: 138px;
+            border-radius: 999px;
+            display: grid;
+            place-items: center;
+            background:
+              radial-gradient(circle at center, #13151f 0 54%, transparent 55%),
+              conic-gradient(from 210deg, #ff6b00 0 18%, #ffc600 18% 76%, #353845 76% 100%);
+            border: 3px solid rgba(255,194,73,.55);
+            box-shadow: 0 0 0 3px rgba(255,183,0,.14), 0 16px 30px rgba(0,0,0,.35);
+            text-align: center;
+            position: relative;
+          }
+          .trivia-timer-label,
+          .trivia-timer-unit {
+            text-transform: uppercase;
+            color: #ffd66b;
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: .08em;
+            z-index: 1;
+          }
+          .trivia-timer-value {
+            color: #ffffff;
+            font-size: 52px;
+            line-height: 1;
+            font-weight: 900;
+            z-index: 1;
+          }
+          .trivia-question-stage {
+            margin-bottom: 18px;
+            padding: 24px 20px 18px;
+            border-radius: 22px;
+            background:
+              radial-gradient(circle at center, rgba(255,249,221,.42), transparent 60%),
+              linear-gradient(180deg, #f7e6bf 0%, #f3dba9 100%);
+            border: 2px solid rgba(164,103,17,.42);
+            box-shadow: inset 0 0 0 2px rgba(255,255,255,.15);
+            text-align: center;
+          }
+          .trivia-question-stars {
+            color: #d68c00;
+            font-size: 18px;
+            letter-spacing: .4em;
+            margin-bottom: 8px;
+          }
+          .trivia-question-text {
+            color: #16181f;
+            font-size: clamp(28px, 4vw, 56px);
+            line-height: 1.08;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: .03em;
+            text-wrap: balance;
+          }
+          .trivia-question-subline {
+            margin-top: 10px;
+            color: #744410;
+            font-size: 16px;
+            font-weight: 800;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+          }
+          .trivia-answer-grid-shell { margin-bottom: 10px; text-align: center; }
+          .trivia-answer-grid-title {
+            color: #ffe39a;
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: .12em;
+            text-transform: uppercase;
+          }
+          #handList.trivia-answer-grid {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px 18px;
+          }
+          .trivia-answer-card {
+            min-height: 104px;
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            padding: 18px 20px !important;
+            border-radius: 28px !important;
+            background: linear-gradient(180deg, rgba(15,18,31,.98), rgba(4,5,12,.98)) !important;
+            color: #ffffff !important;
+            border: 3px solid rgba(255,184,0,.48) !important;
+            box-shadow: 0 12px 26px rgba(0,0,0,.32), inset 0 0 0 1px rgba(255,255,255,.04);
+            position: relative;
+            overflow: hidden;
+          }
+          .trivia-answer-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, rgba(255,193,7,.08), transparent 35%);
+            pointer-events: none;
+          }
+          .trivia-answer-card.selected {
+            border-color: rgba(255,224,109,.95) !important;
+            box-shadow: 0 0 0 4px rgba(255,196,0,.18), 0 16px 34px rgba(0,0,0,.38);
+            transform: translateY(-1px);
+          }
+          .trivia-answer-badge {
+            flex: 0 0 66px;
+            width: 66px;
+            height: 66px;
+            border-radius: 999px;
+            display: inline-grid;
+            place-items: center;
+            background: radial-gradient(circle at 35% 30%, #ffbe5c, #ff7a00 56%, #ac2f00 100%);
+            border: 3px solid rgba(255,214,95,.88);
+            color: #fff9dc;
+            font-size: 36px;
+            font-weight: 900;
+            text-shadow: 0 1px 0 rgba(0,0,0,.28);
+            box-shadow: 0 0 0 3px rgba(255,194,73,.16);
+          }
+          .trivia-answer-text {
+            font-size: clamp(24px, 2.4vw, 42px);
+            line-height: 1.12;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: .02em;
+            text-wrap: balance;
+          }
+          .trivia-progress-strip {
+            margin-top: 14px;
+            padding: 10px 16px;
+            border-radius: 18px;
+            background: linear-gradient(180deg, rgba(20,20,28,.98), rgba(8,9,15,.98));
+            border: 2px solid rgba(255,189,45,.28);
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+          }
+          .trivia-progress-text {
+            color: #fff1bf;
+            font-size: 16px;
+            font-weight: 900;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+          }
+          .trivia-progress-dots {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+          }
+          .trivia-progress-dot {
+            width: 34px;
+            height: 34px;
+            border-radius: 999px;
+            display: inline-grid;
+            place-items: center;
+            border: 2px solid rgba(255,206,97,.25);
+            color: #ffffff;
+            background: rgba(255,255,255,.04);
+            font-size: 14px;
+            font-weight: 900;
+          }
+          .trivia-progress-dot.done {
+            background: linear-gradient(180deg, #ffd44c, #f7a800);
+            color: #1d1604;
+            border-color: rgba(255,222,112,.75);
+          }
+          .trivia-progress-dot.active {
+            background: linear-gradient(180deg, #ffb24b, #ff6c00);
+            border-color: rgba(255,214,95,.95);
+            color: #fff7dd;
+            box-shadow: 0 0 0 3px rgba(255,188,0,.16);
+          }
+
+          /* Hide the old trivia prompt block when the new stage is active */
+          body.trivia-theme-active #triviaQuestionPrompt {
+            display: none !important;
+          }
+
+          @media (max-width: 980px) {
+            .trivia-show-topbar {
+              grid-template-columns: 1fr;
+            }
+            .trivia-timer-dial {
+              justify-self: center;
+            }
+            #handList.trivia-answer-grid {
+              grid-template-columns: 1fr;
+            }
+          }
 
           /* Player view cleanup */
           #hostPanel, #roomPanel, #roomCard, #hostCard, .host-card, .room-card {
